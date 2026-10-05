@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/telegram.mjs": {
+      "maxDuration": 10
+    },
+    "api/setup.mjs": {
+      "maxDuration": 10
+    }
+  }
+}

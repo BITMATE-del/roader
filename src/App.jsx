@@ -681,11 +681,45 @@ function HistoryPage({posts}){
     </tbody></table></div>}</div></>;
 }
 
-function Analytics({data}){
+function Analytics({data,onRefresh}){
   const t=data?.totals||{};
-  return <><div className="hero-row"><div><h1>성과 분석</h1><p>샘플 수치 없이 실제 집계값만 표시합니다.</p></div></div>
-    <div className="stats"><Stat icon={Eye} label="전체 조회수" value={t.views}/><Stat icon={UserRound} label="프로필 방문" value={t.profile_visits}/><Stat icon={MousePointerClick} label="봇 진입" value={t.bot_entries}/><Stat icon={ClipboardCheck} label="신청 완료" value={t.applications}/></div>
-    <div className="panel"><EmptyState title="성과 데이터 수집 준비 완료" desc="Threads 게시/인사이트 연동 후 게시물별 조회·반응·전환 그래프를 이 영역에 표시합니다."/></div>
+  const rows=(data?.posts||[]).filter(p=>p.status==="published");
+  const [syncing,setSyncing]=useState(false);
+  const [syncMessage,setSyncMessage]=useState("");
+
+  async function syncInsights(){
+    setSyncing(true);setSyncMessage("");
+    try{
+      const r=await api("/api/metrics/sync",{method:"POST",body:JSON.stringify({})});
+      setSyncMessage("성과 갱신 완료 · 성공 "+(r.synced||0)+"개"+(r.failed?" · 실패 "+r.failed+"개":""));
+      await onRefresh();
+    }catch(e){
+      setSyncMessage("성과 갱신 실패 · "+(e.details||e.message||"server_error"));
+    }finally{setSyncing(false);}
+  }
+
+  return <><div className="hero-row"><div><h1>성과 분석</h1><p>실제 Threads 게시물 인사이트를 기준으로 집계합니다.</p></div><button className="primary" onClick={syncInsights} disabled={syncing}>{syncing?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>} {syncing?"Threads 인사이트 수집 중":"성과 지금 갱신"}</button></div>
+    {syncMessage&&<div className="analytics-sync-message">{syncMessage}</div>}
+    <div className="stats analytics-stats">
+      <Stat icon={Eye} label="전체 조회수" value={fmt(t.views)}/>
+      <Stat icon={Heart} label="좋아요" value={fmt(t.likes)}/>
+      <Stat icon={MessageCircle} label="답글" value={fmt(t.replies)}/>
+      <Stat icon={RefreshCw} label="리포스트" value={fmt(t.reposts)}/>
+    </div>
+    <div className="stats analytics-stats secondary">
+      <Stat icon={Newspaper} label="인용" value={fmt(t.quotes)}/>
+      <Stat icon={Send} label="공유" value={fmt(t.shares)}/>
+      <Stat icon={MousePointerClick} label="봇 진입" value={fmt(t.bot_entries)}/>
+      <Stat icon={ClipboardCheck} label="신청 완료" value={fmt(t.applications)}/>
+    </div>
+    <div className="panel">
+      <SectionTitle title="최근 게시물 성과" action={<span className="tag">실제 게시 완료 기준</span>}/>
+      {rows.length===0?<EmptyState title="게시 완료 데이터가 없습니다." desc="Threads에 실제 게시된 글이 생기면 여기에서 조회수와 반응을 비교할 수 있습니다."/>:
+      <div className="table-wrap"><table><thead><tr><th>계정</th><th>게시물</th><th>조회</th><th>좋아요</th><th>답글</th><th>리포스트</th><th>인용</th><th>공유</th></tr></thead><tbody>
+        {rows.map(p=><tr key={p.id}><td>{p.account_name}</td><td className="analytics-post-body">{String(p.body||"").slice(0,68)}{String(p.body||"").length>68?"…":""}</td><td>{fmt(p.views)}</td><td>{fmt(p.likes)}</td><td>{fmt(p.replies)}</td><td>{fmt(p.reposts)}</td><td>{fmt(p.quotes)}</td><td>{fmt(p.shares)}</td></tr>)}
+      </tbody></table></div>}
+    </div>
+    <div className="analytics-note">프로필 방문은 현재 Threads 게시물 인사이트의 공통 제공 지표가 아니어서 임의 추정하지 않습니다. 봇 진입·신청 전환은 ROADER 자체 유입 추적 데이터로 집계합니다.</div>
   </>;
 }
 
@@ -741,7 +775,7 @@ export default function App(){
     writer:<Writer accounts={accounts} posts={posts} onSaved={loadAll}/>,
     scheduler:<Scheduler schedules={schedules}/>,
     history:<HistoryPage posts={posts}/>,
-    analytics:<Analytics data={dashboard}/>,
+    analytics:<Analytics data={dashboard} onRefresh={loadAll}/>,
     leads:<Leads leads={leads} onRefresh={loadAll}/>,
     settings:<SettingsPage/>
   }[page];

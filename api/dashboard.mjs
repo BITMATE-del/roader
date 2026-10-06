@@ -9,12 +9,23 @@ export default async function handler(req, res) {
 
     const [totals, accounts, schedules, posts, leads] = await Promise.all([
       sql(`
+        with latest as (
+          select distinct on (post_id)
+            post_id,views,likes,replies,reposts,quotes,shares,profile_visits,bot_entries,applications
+          from roader_metrics
+          order by post_id,captured_at desc
+        )
         select
-          coalesce(sum(m.views),0)::bigint as views,
-          coalesce(sum(m.profile_visits),0)::bigint as profile_visits,
-          coalesce(sum(m.bot_entries),0)::bigint as bot_entries,
-          coalesce(sum(m.applications),0)::bigint as applications
-        from roader_metrics m
+          coalesce(sum(views),0)::bigint as views,
+          coalesce(sum(likes),0)::bigint as likes,
+          coalesce(sum(replies),0)::bigint as replies,
+          coalesce(sum(reposts),0)::bigint as reposts,
+          coalesce(sum(quotes),0)::bigint as quotes,
+          coalesce(sum(shares),0)::bigint as shares,
+          coalesce(sum(profile_visits),0)::bigint as profile_visits,
+          coalesce(sum(bot_entries),0)::bigint as bot_entries,
+          coalesce(sum(applications),0)::bigint as applications
+        from latest
       `),
       sql(`
         select a.*,
@@ -36,6 +47,9 @@ export default async function handler(req, res) {
           coalesce((select views from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as views,
           coalesce((select likes from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as likes,
           coalesce((select replies from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as replies,
+          coalesce((select reposts from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as reposts,
+          coalesce((select quotes from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as quotes,
+          coalesce((select shares from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as shares,
           coalesce((select profile_visits from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as profile_visits,
           coalesce((select bot_entries from roader_metrics m where m.post_id=p.id order by captured_at desc limit 1),0)::bigint as bot_entries
         from roader_posts p

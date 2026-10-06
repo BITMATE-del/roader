@@ -98,6 +98,8 @@ export async function ensureSchema() {
       likes integer not null default 0,
       replies integer not null default 0,
       reposts integer not null default 0,
+      quotes integer not null default 0,
+      shares integer not null default 0,
       profile_visits integer not null default 0,
       bot_entries integer not null default 0,
       applications integer not null default 0
@@ -156,6 +158,8 @@ export async function ensureSchema() {
     `alter table roader_accounts alter column cta_ratio set default 0`,
     `create index if not exists idx_roader_posts_account_status on roader_posts(account_id, status)`,
     `create index if not exists idx_roader_schedules_time_status on roader_schedules(scheduled_at, status)`,
+    `alter table roader_metrics add column if not exists quotes integer not null default 0`,
+    `alter table roader_metrics add column if not exists shares integer not null default 0`,
     `create index if not exists idx_roader_metrics_post_time on roader_metrics(post_id, captured_at desc)`,
     `create index if not exists idx_roader_leads_source on roader_leads(source_code, created_at desc)`
   ];

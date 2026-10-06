@@ -105,3 +105,8 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 .ai-topic-override{margin-top:10px;border-top:1px solid #e5e8f6;padding-top:9px}
 .ai-topic-override summary{cursor:pointer;font-size:10px;font-weight:700;color:#77839a;user-select:none}
 .ai-topic-override textarea{margin-top:8px}
+
+.analytics-sync-message{margin:-4px 0 14px;padding:10px 12px;border:1px solid #dfe5ef;border-radius:9px;background:#f8fafc;color:#59667a;font-size:11px}
+.analytics-stats.secondary{margin-top:10px}
+.analytics-post-body{min-width:280px;max-width:480px;white-space:normal;line-height:1.45}
+.analytics-note{margin-top:12px;padding:11px 13px;border-radius:9px;background:#f8fafc;border:1px solid #e5e9f0;color:#7a8697;font-size:10px;line-height:1.55}

@@ -115,7 +115,91 @@ async function fetchUpbitKrwTicker(symbol){
   }
 }
 
-async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,live}){
+function calcRsi(closes,period=14){
+  if(!Array.isArray(closes)||closes.length<=period) return null;
+  let gains=0,losses=0;
+  for(let i=1;i<=period;i++){
+    const d=closes[i]-closes[i-1];
+    if(d>=0) gains+=d; else losses+=Math.abs(d);
+  }
+  let avgGain=gains/period;
+  let avgLoss=losses/period;
+  for(let i=period+1;i<closes.length;i++){
+    const d=closes[i]-closes[i-1];
+    const gain=d>0?d:0;
+    const loss=d<0?Math.abs(d):0;
+    avgGain=((avgGain*(period-1))+gain)/period;
+    avgLoss=((avgLoss*(period-1))+loss)/period;
+  }
+  if(avgLoss===0) return 100;
+  const rs=avgGain/avgLoss;
+  return Number((100-(100/(1+rs))).toFixed(1));
+}
+
+function calcEma(closes,period){
+  if(!Array.isArray(closes)||closes.length<period) return null;
+  const k=2/(period+1);
+  let ema=closes.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for(let i=period;i<closes.length;i++) ema=(closes[i]*k)+(ema*(1-k));
+  return Number(ema.toFixed(2));
+}
+
+async function fetchUpbitTechnical(symbol){
+  const s=normalizeTicker(symbol);
+  if(!s) return null;
+  try{
+    const r=await fetch("https://api.upbit.com/v1/candles/minutes/60?market=KRW-"+encodeURIComponent(s)+"&count=60",{
+      headers:{"accept":"application/json"}
+    });
+    if(!r.ok) return null;
+    const rows=await r.json().catch(()=>[]);
+    if(!Array.isArray(rows)||rows.length<20) return null;
+
+    const candles=[...rows].reverse();
+    const closes=candles.map(v=>Number(v.trade_price)).filter(Number.isFinite);
+    const highs=candles.map(v=>Number(v.high_price)).filter(Number.isFinite);
+    const lows=candles.map(v=>Number(v.low_price)).filter(Number.isFinite);
+    const volumes=candles.map(v=>Number(v.candle_acc_trade_volume)).filter(Number.isFinite);
+    const current=closes[closes.length-1];
+    const recent24=candles.slice(-24);
+    const recent12=candles.slice(-12);
+
+    const below=lows.filter(v=>v<current).sort((a,b)=>b-a);
+    const above=highs.filter(v=>v>current).sort((a,b)=>a-b);
+
+    const supportCandidates=[
+      ...recent12.map(v=>Number(v.low_price)),
+      ...recent24.map(v=>Number(v.low_price))
+    ].filter(v=>Number.isFinite(v)&&v<current).sort((a,b)=>b-a);
+
+    const resistanceCandidates=[
+      ...recent12.map(v=>Number(v.high_price)),
+      ...recent24.map(v=>Number(v.high_price))
+    ].filter(v=>Number.isFinite(v)&&v>current).sort((a,b)=>a-b);
+
+    const avgVol20=volumes.slice(-20).reduce((a,b)=>a+b,0)/Math.max(1,volumes.slice(-20).length);
+    const lastVol=volumes[volumes.length-1]||0;
+
+    return {
+      timeframe:"60m",
+      rsi14:calcRsi(closes.slice(-40),14),
+      ema9:calcEma(closes,9),
+      ema20:calcEma(closes,20),
+      support_1:supportCandidates[0]||below[0]||null,
+      support_2:supportCandidates.find(v=>supportCandidates[0]&&Math.abs(v-supportCandidates[0])/current>0.008)||below[1]||null,
+      resistance_1:resistanceCandidates[0]||above[0]||null,
+      resistance_2:resistanceCandidates.find(v=>resistanceCandidates[0]&&Math.abs(v-resistanceCandidates[0])/current>0.008)||above[1]||null,
+      recent_24h_high:Math.max(...recent24.map(v=>Number(v.high_price))),
+      recent_24h_low:Math.min(...recent24.map(v=>Number(v.low_price))),
+      volume_ratio_1h_to_avg20:avgVol20>0?Number((lastVol/avgVol20).toFixed(2)):null
+    };
+  }catch{
+    return null;
+  }
+}
+
+
+async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,live,technical}){
   const correctionContext={
     ...context,
     selected_topic:parsed.selected_topic||"",
@@ -131,7 +215,8 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
       change_rate_percent:Number((live.signed_change_rate*100).toFixed(2)),
       timestamp_ms:live.timestamp
     },
-    correction_rule:"현재가·당일 고가·당일 저가·등락률은 위 UPBIT 실시간 값만 사용하고, 웹검색의 오래된 가격 숫자는 현재가처럼 쓰지 않는다."
+    technical_analysis:technical||null,
+    correction_rule:"현재가·당일 고가·당일 저가·등락률은 위 UPBIT 실시간 값만 사용한다. RSI·EMA·지지·저항은 technical_analysis가 있을 때만 사용하고 임의로 만들지 않는다. 웹검색의 오래된 가격 숫자는 현재가처럼 쓰지 않는다."
   };
 
   const r=await fetch("https://api.openai.com/v1/responses",{
@@ -384,7 +469,15 @@ export default async function handler(req,res){
         "이미 급등한 코인은 뒤늦게 추격을 권하지 않는다. 대신 지금 위치가 추격 구간인지, 눌림을 기다릴 구간인지, 추세 확인 구간인지 설명한다.",
         "BTC/ETH는 전체 시장 방향 설명이 꼭 필요할 때만 메인 소재로 쓰고, 그렇지 않으면 알트코인이나 섹터 전망을 우선한다.",
         "최근 게시물과 같은 코인·같은 내러티브를 반복하지 않는다. 새롭게 강한 근거가 없으면 다른 소재로 바꾼다.",
-        "본문 기본 구조는 '후킹 → 현재 원화 가격/최근 흐름 → 최근 핵심 이슈가 있으면 그 영향 → 왜 움직였는지 → 앞으로의 상승 시나리오 → 하락·조정 시나리오 → 제가 보는 핵심 가격/조건 → 독자 질문'이다.",
+        "본문은 트레이더가 차트를 보며 바로 설명하는 느낌으로 쓴다. 기사·리포트처럼 길게 설명하지 않는다.",
+        "첫 문장은 '코인명, 지금은 OOO원대를 지키는지가 중요합니다' 또는 '코인명, 지금은 OOO원 돌파 여부가 핵심입니다'처럼 가격과 관점을 동시에 던지는 훅을 우선한다.",
+        "다음 줄에 '현재 XXX 약 OOO원'처럼 현재가를 짧게 적는다.",
+        "이후 '지금 제가 보는 건 딱 2개입니다' 또는 '제가 보는 핵심은 3가지입니다'처럼 핵심 포인트 수를 먼저 선언한다.",
+        "핵심 포인트는 지지·저항·거래량·RSI·EMA·이슈 중 실제 데이터가 확인된 항목만 사용한다.",
+        "가격 시나리오는 'OOO원 돌파 → 다음 OOO원대 체크', 'OOO원 이탈 → 아래 OOO원대 재확인 가능성'처럼 화살표 형식을 적극 사용한다.",
+        "RSI·EMA 수치는 technical_analysis에 값이 있을 때만 사용하며 절대 추정하지 않는다.",
+        "마지막은 'OOO원 먼저 돌파한다 → 1 / OOO원 먼저 이탈한다 → 2 / 어떻게 보시나요?' 같은 선택형 질문으로 마무리한다.",
+        "본문 기본 구조는 '후킹 → 현재 원화 가격 → 핵심 2~3가지 → 상승 조건 → 조정 조건 → 핵심 정리 → 1/2 선택 질문'이다.",
         "본문을 읽은 사람이 이 코인의 현재 위치와 앞으로 확인해야 할 가격 조건을 바로 이해할 수 있어야 한다.",
         "마지막은 매수 권유가 아니라 제가 보는 조건과 판단 기준을 남긴다.",
         "검색 결과가 빈약하면 억지 전망을 만들지 말고 불확실성을 명시하고 관망 조건을 설명한다."
@@ -467,10 +560,19 @@ export default async function handler(req,res){
     }
 
     let liveMarket=null;
+    let technicalAnalysis=null;
     if(isCrypto){
       liveMarket=await fetchUpbitKrwTicker(parsed.symbol);
+      technicalAnalysis=await fetchUpbitTechnical(parsed.symbol);
       if(liveMarket){
-        const corrected=await regenerateCryptoWithLivePrice({model,instructions,context,parsed,live:liveMarket});
+        const corrected=await regenerateCryptoWithLivePrice({
+          model,
+          instructions,
+          context,
+          parsed,
+          live:liveMarket,
+          technical:technicalAnalysis
+        });
         if(corrected) parsed=corrected;
       }
     }
@@ -515,6 +617,7 @@ export default async function handler(req,res){
       body_length:unicodeLength(finalBody),
       reply_length:unicodeLength(finalReply),
       live_market:liveMarket,
+      technical_analysis:technicalAnalysis,
       model
     });
   }catch(error){

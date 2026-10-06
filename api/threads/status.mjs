@@ -1,4 +1,4 @@
-import { ensureSchema, client } from "./_db.mjs";
+import { ensureSchema, client } from "../_db.mjs";
 
 export default async function handler(req,res){
   try{

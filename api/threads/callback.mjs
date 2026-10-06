@@ -1,4 +1,4 @@
-import { ensureSchema, client } from "./_db.mjs";
+import { ensureSchema, client } from "../_db.mjs";
 
 const APP_ID = process.env.META_THREADS_APP_ID;
 const APP_SECRET = process.env.META_THREADS_APP_SECRET;

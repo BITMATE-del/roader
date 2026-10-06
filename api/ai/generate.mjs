@@ -244,6 +244,57 @@ function hardFitThreadsText(value,maxChars){
   return Array.from(text).slice(0,maxChars).join("").trim();
 }
 
+
+async function polishCryptoTone({model,body,reply}){
+  const response=await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "authorization":`Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body:JSON.stringify({
+      model,
+      reasoning:{effort:"low"},
+      instructions:[
+        "한국 Threads 코인 투자 계정의 문체 편집자다.",
+        "사실, 코인명, 가격, 날짜, 숫자, 이슈, 상승·하락 조건은 절대 바꾸지 않는다.",
+        "내용을 새로 추가하지 말고 말투와 문장 리듬만 자연스럽게 다듬는다.",
+        "기사체·보고서체를 피한다.",
+        "'~입니다', '~합니다', '~됩니다', '~있습니다' 같은 딱딱한 종결어미를 연속으로 쓰지 않는다.",
+        "같은 종결어미가 3문장 연속 반복되지 않게 한다.",
+        "짧은 문장과 중간 길이 문장을 섞는다.",
+        "'~죠', '~보입니다', '~볼 만합니다', '~가능성이 있습니다', '~체크해볼 구간입니다', '~라고 봅니다' 등을 문맥에 맞게 자연스럽게 섞되 과하게 구어체로 만들지 않는다.",
+        "첫 문장은 설명이 아니라 관심을 끄는 후킹 문장으로 유지한다.",
+        "문단은 1~2문장, 문장과 문장 사이 줄바꿈, 문단 사이 빈 줄을 유지한다.",
+        "본문은 470자 이하, 첫 댓글은 300자 이하로 유지한다.",
+        "JSON만 반환한다."
+      ].join("\n"),
+      input:JSON.stringify({body,reply}),
+      text:{
+        format:{
+          type:"json_schema",
+          name:"crypto_tone_polish",
+          strict:true,
+          schema:{
+            type:"object",
+            additionalProperties:false,
+            properties:{
+              body:{type:"string"},
+              reply:{type:"string"}
+            },
+            required:["body","reply"]
+          }
+        }
+      }
+    })
+  });
+
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) return null;
+  const output=extractOutputText(data);
+  try{return JSON.parse(output);}catch{return null;}
+}
+
 export default async function handler(req,res){
   try{
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
@@ -302,6 +353,7 @@ export default async function handler(req,res){
       "첫 문장은 반드시 짧고 강한 후킹 문장으로 쓴다. 18~36자 안쪽을 우선하고, 설명형 서두보다 '지금 이 코인을 봐야 하는 이유', '가격이 갈릴 핵심 구간', '시장이 아직 덜 반영한 변수'처럼 독자가 다음 문장을 보게 만드는 내용을 먼저 던진다.",
       "첫 문장 다음에 바로 가격이나 전망 핵심을 연결한다. '며칠 새 올랐습니다' 같은 평범한 사실 전달로 시작하지 않는다.",
       "말투는 기사·리서치 보고서처럼 딱딱하게 쓰지 않는다. 실제 개인 투자자가 Threads에서 말하듯 쉽고 자연스럽게 쓴다.",
+      "문장 끝을 모두 '~입니다/~합니다/~됩니다'로 맞추지 않는다. 같은 종결어미가 3번 연속 나오면 반드시 다른 자연스러운 표현으로 바꾼다.",
       "'~입니다/~합니다/~됩니다' 같은 종결어미를 연속으로 반복하지 않는다. '~죠', '~보입니다', '~볼 수 있습니다', '~가능성이 있습니다', '~체크해볼 만합니다'처럼 자연스럽게 섞는다.",
       "최근 실제 게시물의 도입부와 소재가 겹치면 다른 소재를 선택한다.",
       "댓글은 본문 반복이 아니라 프로필 유입용 1차 댓글이다.",
@@ -425,6 +477,18 @@ export default async function handler(req,res){
 
     let finalBody=formatMobileText(parsed.body||"");
     let finalReply=formatMobileText(parsed.reply||"");
+
+    if(isCrypto){
+      const polished=await polishCryptoTone({
+        model,
+        body:finalBody,
+        reply:finalReply
+      });
+      if(polished){
+        finalBody=formatMobileText(polished.body||finalBody);
+        finalReply=formatMobileText(polished.reply||finalReply);
+      }
+    }
 
     if(unicodeLength(finalBody)>470 || unicodeLength(finalReply)>300){
       const compressed=await compressThreadsDraft({

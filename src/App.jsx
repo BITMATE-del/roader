@@ -425,6 +425,7 @@ function StyleLearning({accounts,onRefresh}){
       await onRefresh();
     }catch(e){
       if(e.message==="threads_account_not_connected") setMessage("선택한 ROADER 계정을 먼저 Threads에 연결해주세요.");
+      else if(e.message==="threads_token_expired") setMessage("Threads 연결 토큰이 만료되었습니다. 계정 관리에서 이 계정을 'Threads 다시 연결' 한 번 해주세요.");
       else if(e.message==="threads_profile_discovery_required") setMessage("공개 프로필 수집 권한이 없습니다. 계정 관리에서 이 Threads 계정을 한 번 다시 연결해 threads_profile_discovery 권한을 승인해주세요.");
       else setMessage("참고 계정 게시물 자동 수집에 실패했습니다."+(e.details?" · "+e.details:""));
     }finally{setLoading(false);}

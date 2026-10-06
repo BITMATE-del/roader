@@ -112,19 +112,35 @@ export default async function handler(req,res){
     const account=accountRows[0];
     if(!account) return res.status(404).json({ok:false,error:"account_not_found"});
 
+    const sourceRows=await sql(
+      "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
+      [accountId,"@"+sourceHandle,String(b.label||"")]
+    );
+    const source=sourceRows[0];
+
     let token;
     try{
       token=await getValidThreadsToken(sql,accountId);
     }catch(tokenError){
-      if(tokenError?.code==="threads_account_not_connected"){
-        return res.status(409).json({ok:false,error:"threads_account_not_connected"});
+      const code=tokenError?.code||"threads_token_refresh_failed";
+      const readable=code==="threads_token_expired"
+        ?"Threads 연결 토큰이 만료되었습니다. 계정 관리에서 Threads 다시 연결이 필요합니다."
+        :code==="threads_account_not_connected"
+          ?"선택한 ROADER 계정이 Threads에 연결되어 있지 않습니다."
+          :"Threads 토큰 갱신에 실패했습니다.";
+      await sql(
+        "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
+        [readable,source.id]
+      );
+      if(code==="threads_account_not_connected"){
+        return res.status(409).json({ok:false,error:code,message:readable});
       }
-      if(tokenError?.code==="threads_token_expired"){
-        return res.status(401).json({ok:false,error:"threads_token_expired"});
+      if(code==="threads_token_expired"){
+        return res.status(401).json({ok:false,error:code,message:readable});
       }
-      return res.status(502).json({ok:false,error:"threads_token_refresh_failed"});
+      return res.status(502).json({ok:false,error:code,message:readable});
     }
-    const sourceRows=await sql(
+    
       "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
       [accountId,"@"+sourceHandle,String(b.label||"")]
     );

@@ -78,6 +78,7 @@ export default async function handler(req,res){
     const expiresIn=Math.max(0,Number(longData.expires_in||0));
     const expiresAt=expiresIn?new Date(Date.now()+expiresIn*1000).toISOString():null;
     await sql("update roader_accounts set threads_user_id=$1,threads_username=$2,threads_access_token_encrypted=$3,threads_token_expires_at=$4,threads_token_refreshed_at=now(),updated_at=now() where id=$5",[threadsUserId,actual?"@"+actual:"",longToken,expiresAt,accountId]);
+    await sql("update roader_style_sources set last_error=null,updated_at=now() where account_id=$1",[accountId]);
 
     return popupResult(res,{type:"roader_threads_oauth",status:"connected",account_id:accountId,username:actual?"@"+actual:""});
   }catch(error){

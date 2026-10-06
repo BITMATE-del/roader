@@ -9,6 +9,7 @@ export default async function handler(req,res){
   const scope = [
     "threads_basic",
     "threads_content_publish",
+    "threads_manage_replies",
     "threads_manage_insights"
   ].join(",");
 

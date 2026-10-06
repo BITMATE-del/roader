@@ -510,6 +510,7 @@ function Writer({accounts,posts,onSaved}){
   const [publishing,setPublishing]=useState(false);
   const [message,setMessage]=useState("");
   const [messageType,setMessageType]=useState("success");
+  const [replyText,setReplyText]=useState("제가 지금 보고 있는 종목들은\n단순히 “오를 것 같다”는 느낌으로 고르지는 않습니다.\n\n수급 · 실적 · 모멘텀 · 시장 관심도를 따로 보고\n종목별로 점수를 나눠서 보고 있습니다.\n\n현재 관심 있게 보고 있는 섹터와 종목들도 계속 업데이트하고 있으니\n궁금하신 분들은 프로필에서 무료로 확인해보셔도 됩니다.");
 
   useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
   const quality=useMemo(()=>scorePost({
@@ -564,9 +565,16 @@ function Writer({accounts,posts,onSaved}){
         body:text,
         quality_score:quality.score,
         quality_status:quality.status,
-        quality_details:quality
+        quality_details:quality,
+        reply_text:replyText.trim()
       })});
-      setMessage(`Threads 게시 완료 · 게시물 ID ${result.threads_post_id}`);
+      if(result.reply_ok){
+        setMessage(`Threads 본문 + 1차 댓글 게시 완료 · 댓글 ID ${result.threads_reply_id}`);
+      }else if(result.reply_attempted){
+        setMessage(`Threads 본문 게시 완료 · 1차 댓글 등록 실패${result.reply_details?` · Meta: ${result.reply_details}`:""}`);
+      }else{
+        setMessage(`Threads 게시 완료 · 게시물 ID ${result.threads_post_id}`);
+      }
       setText("");
       setImage(null);
       await onSaved();
@@ -595,6 +603,11 @@ function Writer({accounts,posts,onSaved}){
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
         {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 실제 게시를 위해 저장소 연결이 필요합니다.</span></label>}
         <label>게시물 본문</label><textarea rows="15" value={text} onChange={e=>setText(e.target.value)} placeholder="Threads에 게시할 본문을 작성하세요."/>
+        <div className="reply-editor">
+          <div className="reply-editor-head"><label>게시 후 1차 댓글</label><span>{replyText.trim()?"자동 등록":"댓글 등록 안 함"}</span></div>
+          <textarea rows="7" value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder="비워두면 1차 댓글을 등록하지 않습니다."/>
+          <small>본문 게시가 성공하면 이 내용을 바로 첫 댓글로 등록합니다. 프로필 유입용 문구는 게시 전 수정할 수 있습니다.</small>
+        </div>
         <div className="publish-actions">
           <button className="ghost draft-action" onClick={saveDraft} disabled={saving||publishing||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 초안 저장</button>
           <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||!connected||mediaMode!=="text"||!text.trim()||quality.status==="blocked"}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>

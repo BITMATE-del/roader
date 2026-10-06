@@ -10,6 +10,10 @@ async function graphPost(url, params){
   return {response,data};
 }
 
+function metaError(data){
+  return data?.error?.message||data?.error_message||data?.message||null;
+}
+
 export default async function handler(req,res){
   let postId=null;
   try{
@@ -18,6 +22,7 @@ export default async function handler(req,res){
     const body=req.body||{};
     const accountId=Number(body.account_id||0);
     const text=String(body.body||"").trim();
+    const replyText=String(body.reply_text||"").trim();
     const mediaMode=String(body.media_mode||"text");
 
     if(!accountId||!text) return res.status(400).json({ok:false,error:"account_id_and_body_required"});
@@ -53,7 +58,6 @@ export default async function handler(req,res){
 
     const token=String(account.threads_access_token_encrypted);
 
-    // Threads supports direct publishing for text posts with auto_publish_text=true.
     const publish=await graphPost(
       "https://graph.threads.net/v1.0/me/threads",
       {
@@ -66,13 +70,14 @@ export default async function handler(req,res){
 
     if(!publish.response.ok||!publish.data?.id){
       if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-      const details=publish.data?.error?.message||publish.data?.error_message||publish.data?.message||null;
+      const details=metaError(publish.data);
       const code=publish.data?.error?.code||publish.data?.error_code||null;
       console.error("threads-auto-publish",publish.data);
       return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
     }
 
     const threadsPostId=String(publish.data.id);
+
     if(postId){
       await sql(
         "update roader_posts set status='published',threads_post_id=$1,published_at=now(),updated_at=now() where id=$2",
@@ -80,7 +85,79 @@ export default async function handler(req,res){
       );
     }
 
-    return res.status(200).json({ok:true,post_id:postId,threads_post_id:threadsPostId});
+    if(!replyText){
+      return res.status(200).json({
+        ok:true,
+        post_id:postId,
+        threads_post_id:threadsPostId,
+        reply_attempted:false,
+        reply_ok:false
+      });
+    }
+
+    const reply=await graphPost(
+      "https://graph.threads.net/v1.0/me/threads",
+      {
+        media_type:"TEXT",
+        text:replyText,
+        reply_to_id:threadsPostId,
+        auto_publish_text:"true",
+        access_token:token
+      }
+    );
+
+    if(!reply.response.ok||!reply.data?.id){
+      const replyDetails=metaError(reply.data);
+      const replyCode=reply.data?.error?.code||reply.data?.error_code||null;
+      console.error("threads-reply",reply.data);
+
+      if(postId){
+        const replyState={
+          attempted:true,
+          ok:false,
+          text:replyText,
+          error:replyDetails,
+          code:replyCode
+        };
+        await sql(
+          "update roader_posts set quality_details=coalesce(quality_details,'{}'::jsonb) || jsonb_build_object('thread_reply',$1::jsonb),updated_at=now() where id=$2",
+          [JSON.stringify(replyState),postId]
+        );
+      }
+
+      return res.status(200).json({
+        ok:true,
+        post_id:postId,
+        threads_post_id:threadsPostId,
+        reply_attempted:true,
+        reply_ok:false,
+        reply_details:replyDetails,
+        reply_code:replyCode
+      });
+    }
+
+    const threadsReplyId=String(reply.data.id);
+    if(postId){
+      const replyState={
+        attempted:true,
+        ok:true,
+        text:replyText,
+        threads_reply_id:threadsReplyId
+      };
+      await sql(
+        "update roader_posts set quality_details=coalesce(quality_details,'{}'::jsonb) || jsonb_build_object('thread_reply',$1::jsonb),updated_at=now() where id=$2",
+        [JSON.stringify(replyState),postId]
+      );
+    }
+
+    return res.status(200).json({
+      ok:true,
+      post_id:postId,
+      threads_post_id:threadsPostId,
+      reply_attempted:true,
+      reply_ok:true,
+      threads_reply_id:threadsReplyId
+    });
   }catch(error){
     console.error("threads-publish-handler",error);
     try{

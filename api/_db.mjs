@@ -28,6 +28,8 @@ export async function ensureSchema() {
       threads_user_id text,
       threads_username text,
       threads_access_token_encrypted text,
+      threads_token_expires_at timestamptz,
+      threads_token_refreshed_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )`,
@@ -212,6 +214,11 @@ export async function ensureSchema() {
     `create unique index if not exists idx_roader_accounts_threads_user_unique
        on roader_accounts(threads_user_id)
        where threads_user_id is not null and threads_user_id <> ''`
+  );
+
+  statements.push(
+    `alter table roader_accounts add column if not exists threads_token_expires_at timestamptz`,
+    `alter table roader_accounts add column if not exists threads_token_refreshed_at timestamptz`
   );
 
   for (const statement of statements) {

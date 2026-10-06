@@ -291,29 +291,43 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
   async function connectThreads(accountId){
     setConnecting(accountId);setMessage("");
     try{
-      const r=await api(`/api/threads/connect?state=account_${accountId}`);
+      const r=await api("/api/threads/connect?state=account_"+accountId);
       if(!r.url) throw new Error("missing_oauth_url");
-      window.location.href=r.url;
+      const width=620,height=760;
+      const left=Math.max(0,window.screenX+(window.outerWidth-width)/2);
+      const top=Math.max(0,window.screenY+(window.outerHeight-height)/2);
+      const popup=window.open(r.url,"roader_threads_oauth","popup=yes,width="+width+",height="+height+",left="+left+",top="+top+",resizable=yes,scrollbars=yes");
+      if(!popup) throw new Error("popup_blocked");
+      popup.focus();
     }catch(e){
-      setMessage(e.message==="meta_threads_not_configured"?"Meta Threads 환경변수가 아직 Production에 적용되지 않았습니다.":"Threads 연결을 시작하지 못했습니다.");
+      setMessage(e.message==="popup_blocked"?"브라우저에서 팝업이 차단되었습니다. ROADER 팝업을 허용한 뒤 다시 시도해주세요.":e.message==="meta_threads_not_configured"?"Meta Threads 환경변수가 아직 Production에 적용되지 않았습니다.":"Threads 연결을 시작하지 못했습니다.");
       setConnecting(null);
     }
   }
-
   useEffect(()=>{
-    const params=new URLSearchParams(window.location.search);
-    if(params.get("threads_connected")==="1"){
-      setMessage("Threads 계정 연결이 완료되었습니다.");
-      window.history.replaceState({}, "", window.location.pathname);
-      onRefresh();
-    }else if(params.get("threads_error")==="already_connected"){
-      const name=params.get("connected_name")||"다른 ROADER 계정";
-      const handle=params.get("connected_handle")||"";
-      setMessage(`이 Threads 계정은 이미 ${name}${handle?` (${handle})`:""}에 연결되어 있습니다. 다른 Threads 계정으로 로그인한 뒤 다시 연결해주세요.`);
-      window.history.replaceState({}, "", window.location.pathname);
-      onRefresh();
+    function onOAuthMessage(event){
+      if(event.origin!==window.location.origin) return;
+      const data=event.data||{};
+      if(data.type!=="roader_threads_oauth") return;
+      setConnecting(null);
+      if(data.status==="connected"){
+        setMessage("Threads 연결 완료 · 실제 계정 "+(data.username||""));
+        onRefresh();
+        return;
+      }
+      if(data.status==="handle_mismatch"){
+        setMessage("연결 차단 · ROADER에는 "+data.expected+" 계정으로 등록되어 있지만 Meta 인증은 "+data.actual+" 계정으로 진행됐습니다. Threads에서 연결할 계정으로 전환한 뒤 다시 시도해주세요.");
+        return;
+      }
+      if(data.status==="already_connected"){
+        setMessage("연결 차단 · 이 Threads 계정은 이미 "+(data.connected_name||"다른 ROADER 계정")+(data.connected_handle?" ("+data.connected_handle+")":"")+"에 연결되어 있습니다.");
+        return;
+      }
+      setMessage("Threads 연결 실패 · "+(data.error||"oauth_error"));
     }
-  },[]);
+    window.addEventListener("message",onOAuthMessage);
+    return ()=>window.removeEventListener("message",onOAuthMessage);
+  },[onRefresh]);
 
   return <>
     <div className="hero-row"><div><h1>Threads 계정 관리</h1><p>운영 계정을 등록하고 Meta OAuth로 실제 Threads 계정을 연결합니다.</p></div><div className="toolbar"><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button><button className="primary" onClick={onAdd}><Plus size={16}/> 계정 추가</button></div></div>
@@ -334,7 +348,7 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
         <div className="account-actions">
           <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
             {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
-            {a.threads_user_id?"Threads 다시 연결":"Threads 연결"}
+            {a.threads_user_id?"Threads 다시 연결":"새 로그인으로 연결"}
           </button>
         </div>
       </div>)}</div>}

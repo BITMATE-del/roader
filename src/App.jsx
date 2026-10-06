@@ -732,14 +732,60 @@ function Leads({leads,onRefresh}){
 }
 
 function SettingsPage(){
-  return <><div className="hero-row"><div><h1>설정</h1><p>ROADER 운영 연결 상태입니다.</p></div></div><div className="panel settings-list">
-    <div><b>Vercel Production</b><span className="badge green">연결됨</span></div>
-    <div><b>Neon Postgres</b><span className="badge green">연결됨</span></div>
-    <div><b>Threads API</b><span className="badge gray">연결 전</span></div>
-    <div><b>AI 생성 API</b><span className="badge gray">연결 전</span></div>
-    <div><b>Vercel Blob 이미지 저장</b><span className="badge gray">연결 전</span></div>
-    <div><b>Telegram 신청 DB 저장</b><span className="badge gray">연결 예정</span></div>
-  </div></>;
+  const [state,setState]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [connecting,setConnecting]=useState(false);
+  const [message,setMessage]=useState("");
+
+  async function load(){
+    setLoading(true);
+    try{
+      const r=await api("/api/integrations");
+      setState(r);
+    }catch(e){
+      setMessage("연결 상태를 불러오지 못했습니다.");
+    }finally{setLoading(false);}
+  }
+
+  async function connectTelegram(){
+    setConnecting(true);setMessage("");
+    try{
+      const r=await api("/api/setup",{method:"POST",body:JSON.stringify({source:"settings"})});
+      setMessage(r.ok?"Telegram webhook 연결이 완료되었습니다.":"Telegram 연결에 실패했습니다.");
+      await load();
+    }catch(e){
+      setMessage("Telegram 연결 실패 · "+(e.details||e.message||"server_error"));
+    }finally{setConnecting(false);}
+  }
+
+  useEffect(()=>{load();},[]);
+
+  const telegramConnected=!!state?.telegram?.connected;
+  const aiConnected=!!state?.ai?.configured;
+  const threadsConnected=!!state?.threads?.configured;
+
+  return <><div className="hero-row"><div><h1>설정</h1><p>ROADER 운영 연결 상태입니다.</p></div><button className="ghost" onClick={load} disabled={loading}><RefreshCw size={15}/> 새로고침</button></div>
+    {message&&<div className="settings-message">{message}</div>}
+    <div className="panel settings-list">
+      <div><b>Vercel Production</b><span className="badge green">연결됨</span></div>
+      <div><b>Neon Postgres</b><span className="badge green">연결됨</span></div>
+      <div><b>Threads API</b><span className={"badge "+(threadsConnected?"green":"gray")}>{threadsConnected?"연결됨":"연결 전"}</span></div>
+      <div><b>AI 생성 API</b><span className={"badge "+(aiConnected?"green":"gray")}>{aiConnected?"연결됨":"연결 전"}</span></div>
+      <div><b>Vercel Blob 이미지 저장</b><span className="badge gray">연결 전</span></div>
+      <div className="settings-telegram-row">
+        <div className="settings-telegram-copy"><b>Telegram 신청봇</b><span>{telegramConnected?(state?.telegram?.webhook_url||"webhook 연결됨"):"환경변수 등록 후 webhook 연결이 필요합니다."}</span></div>
+        <div className="settings-telegram-actions">
+          <span className={"badge "+(telegramConnected?"green":"gray")}>{telegramConnected?"연결됨":"연결 전"}</span>
+          <button className="primary" onClick={connectTelegram} disabled={connecting||!state?.telegram?.configured}>
+            {connecting?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
+            {connecting?"연결 중...":telegramConnected?"Webhook 다시 연결":"Telegram 연결"}
+          </button>
+        </div>
+      </div>
+      <div><b>Telegram 신청 DB 저장</b><span className="badge green">연결됨</span></div>
+    </div>
+    <div className="settings-help">Telegram 연결 버튼은 Bot Token과 Webhook Secret을 브라우저로 노출하지 않고 서버에서 직접 webhook을 등록합니다.</div>
+  </>;
 }
 
 export default function App(){

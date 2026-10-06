@@ -110,3 +110,12 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 .analytics-stats.secondary{margin-top:10px}
 .analytics-post-body{min-width:280px;max-width:480px;white-space:normal;line-height:1.45}
 .analytics-note{margin-top:12px;padding:11px 13px;border-radius:9px;background:#f8fafc;border:1px solid #e5e9f0;color:#7a8697;font-size:10px;line-height:1.55}
+
+.settings-message{margin:0 0 14px;padding:10px 12px;border:1px solid #dfe5ef;border-radius:9px;background:#f8fafc;color:#59667a;font-size:11px}
+.settings-telegram-row{align-items:center!important;gap:16px}
+.settings-telegram-copy{display:flex;flex-direction:column;align-items:flex-start!important;gap:4px}
+.settings-telegram-copy span{font-size:10px;color:#7a8697;word-break:break-all}
+.settings-telegram-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.settings-telegram-actions .primary{white-space:nowrap}
+.settings-help{margin-top:12px;padding:11px 13px;border:1px solid #e5e9f0;border-radius:9px;background:#f8fafc;color:#7a8697;font-size:10px;line-height:1.55}
+@media(max-width:720px){.settings-telegram-row{align-items:flex-start!important;flex-direction:column}.settings-telegram-actions{margin-left:0;width:100%;justify-content:space-between}}

@@ -117,6 +117,36 @@ export async function ensureSchema() {
       processed_at timestamptz,
       created_at timestamptz not null default now()
     )`,
+    `create table if not exists roader_style_sources (
+      id bigserial primary key,
+      account_id bigint not null references roader_accounts(id) on delete cascade,
+      source_handle text not null,
+      label text not null default '',
+      is_active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique(account_id, source_handle)
+    )`,
+    `create table if not exists roader_style_samples (
+      id bigserial primary key,
+      account_id bigint not null references roader_accounts(id) on delete cascade,
+      source_id bigint not null references roader_style_sources(id) on delete cascade,
+      body text not null,
+      sample_hash text not null,
+      created_at timestamptz not null default now(),
+      unique(source_id, sample_hash)
+    )`,
+    `create table if not exists roader_style_profiles (
+      id bigserial primary key,
+      account_id bigint not null references roader_accounts(id) on delete cascade,
+      profile jsonb not null default '{}'::jsonb,
+      sample_count integer not null default 0,
+      confidence integer not null default 0,
+      updated_at timestamptz not null default now(),
+      unique(account_id)
+    )`,
+    `create index if not exists idx_roader_style_samples_account on roader_style_samples(account_id, created_at desc)`,
+    `create index if not exists idx_roader_style_sources_account on roader_style_sources(account_id, is_active)`,
     `create index if not exists idx_roader_posts_account_status on roader_posts(account_id, status)`,
     `create index if not exists idx_roader_schedules_time_status on roader_schedules(scheduled_at, status)`,
     `create index if not exists idx_roader_metrics_post_time on roader_metrics(post_id, captured_at desc)`,

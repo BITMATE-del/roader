@@ -4,7 +4,7 @@ import {
   BarChart3, Send, Settings, Plus, Eye, UserRound, MousePointerClick, ClipboardCheck,
   MoreHorizontal, CheckCircle2, AlertTriangle, Image as ImageIcon, FileText,
   MessageCircle, Newspaper, Heart, UploadCloud, WandSparkles, ShieldCheck, XCircle,
-  Search, ChevronDown, Save, RefreshCw, Database, Loader2
+  Search, ChevronDown, Save, RefreshCw, Database, Loader2, BrainCircuit
 } from "lucide-react";
 import { scorePost, qualityLabel } from "./lib/quality";
 
@@ -12,6 +12,7 @@ const navItems = [
   [LayoutDashboard,"대시보드","dashboard"],
   [Users,"Threads 계정 관리","accounts"],
   [SlidersHorizontal,"콘텐츠 설정","content"],
+  [BrainCircuit,"스타일 학습","learning"],
   [Sparkles,"AI 게시물 생성","writer"],
   [CalendarDays,"게시 스케줄러","scheduler"],
   [History,"게시 이력","history"],
@@ -240,6 +241,117 @@ function ContentSettings({accounts}){
   </>;
 }
 
+function StyleLearning({accounts,onRefresh}){
+  const [account,setAccount]=useState("");
+  const [sourceHandle,setSourceHandle]=useState("");
+  const [label,setLabel]=useState("");
+  const [samplesText,setSamplesText]=useState("");
+  const [data,setData]=useState({sources:[],profile:null,samples:[]});
+  const [loading,setLoading]=useState(false);
+  const [message,setMessage]=useState("");
+
+  useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
+
+  async function load(id=account){
+    if(!id) return;
+    setLoading(true);setMessage("");
+    try{
+      const r=await api(`/api/style-learning?account_id=${id}`);
+      setData(r);
+    }catch{
+      setMessage("학습 데이터를 불러오지 못했습니다.");
+    }finally{setLoading(false);}
+  }
+
+  useEffect(()=>{ if(account) load(account); },[account]);
+
+  async function learn(){
+    if(!account||!sourceHandle.trim()||!samplesText.trim()){
+      setMessage("참고 계정 핸들과 게시물 샘플을 입력해주세요.");
+      return;
+    }
+    const samples=samplesText.split(/\n\s*===POST===\s*\n/i).map(v=>v.trim()).filter(Boolean);
+    setLoading(true);setMessage("");
+    try{
+      const r=await api("/api/style-learning",{method:"POST",body:JSON.stringify({
+        action:"learn",account_id:Number(account),source_handle:sourceHandle.trim(),label:label.trim(),samples
+      })});
+      setMessage(`학습 완료 · 신규 샘플 ${r.inserted}개 · 신뢰도 ${r.confidence}%`);
+      setSamplesText("");
+      await load(account);
+      await onRefresh();
+    }catch{
+      setMessage("스타일 학습에 실패했습니다.");
+    }finally{setLoading(false);}
+  }
+
+  const p=data.profile?.profile||{};
+  const rules=p.writing_rules||{};
+  const selected=accounts.find(a=>String(a.id)===account);
+
+  if(accounts.length===0) return <><div className="hero-row"><div><h1>스타일 학습</h1><p>참고 Threads 계정의 게시 패턴을 계정별 스타일 프로필로 저장합니다.</p></div></div><div className="panel"><EmptyState title="먼저 운영 계정을 등록하세요." desc="스타일 학습은 등록된 ROADER 계정별로 적용됩니다."/></div></>;
+
+  return <>
+    <div className="hero-row"><div><h1>스타일 학습</h1><p>참고 계정의 문장을 복제하지 않고, 반복적으로 나타나는 작성 패턴만 추출해 저장합니다.</p></div><button className="ghost" onClick={()=>load()}><RefreshCw size={15}/> 새로고침</button></div>
+
+    <div className="two-col">
+      <div className="panel">
+        <SectionTitle title="학습 소스 등록"/>
+        <label>적용할 ROADER 계정</label>
+        <select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
+
+        <div className="account-context">
+          <b>{selected?.name}</b>
+          <span>{selected?.persona||"페르소나 미설정"}</span>
+        </div>
+
+        <div className="form-grid">
+          <div><label>참고 Threads 계정 *</label><input value={sourceHandle} onChange={e=>setSourceHandle(e.target.value)} placeholder="@reference_account"/></div>
+          <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="예: 국내주식 질문형 레퍼런스"/></div>
+        </div>
+
+        <label>게시물 샘플</label>
+        <textarea rows="16" value={samplesText} onChange={e=>setSamplesText(e.target.value)} placeholder={"게시물 원문을 붙여넣으세요.\n\n여러 게시물을 넣을 때는 게시물 사이에\n===POST===\n를 넣어 구분하세요."}/>
+        <div className="learning-note">권장: 계정당 최소 10개, 가능하면 20~50개 샘플. 샘플이 많을수록 스타일 신뢰도가 올라갑니다.</div>
+        <button className="generate" onClick={learn} disabled={loading}>{loading?<Loader2 className="spin" size={17}/>:<BrainCircuit size={17}/>} 스타일 분석 및 학습</button>
+        {message&&<div className="save-message">{message}</div>}
+      </div>
+
+      <div className="right-stack">
+        <div className="panel">
+          <SectionTitle title="학습 상태" action={data.profile?<span className="badge green">신뢰도 {data.profile.confidence}%</span>:<span className="badge gray">미학습</span>}/>
+          <div className="learning-summary">
+            <div><span>학습 샘플</span><strong>{data.profile?.sample_count||0}</strong></div>
+            <div><span>평균 글자수</span><strong>{p.avg_chars||0}</strong></div>
+            <div><span>질문형 비율</span><strong>{p.question_post_ratio||0}%</strong></div>
+            <div><span>짧은 훅 비율</span><strong>{p.short_hook_ratio||0}%</strong></div>
+            <div><span>짧은 줄 비율</span><strong>{p.short_line_ratio||0}%</strong></div>
+            <div><span>이모지 사용</span><strong>{p.emoji_ratio||0}%</strong></div>
+          </div>
+
+          <label>추출된 스타일 태그</label>
+          <div className="topic-grid">{(p.style_tags||[]).length?(p.style_tags||[]).map(t=><span className="topic active" key={t}>{t}</span>):<span className="muted">아직 학습된 스타일이 없습니다.</span>}</div>
+
+          <label>자동 적용 작성 규칙</label>
+          <div className="learned-rules">
+            <div><span>목표 길이</span><b>{rules.target_length||"-"}</b></div>
+            <div><span>첫 문장</span><b>{rules.opening||"-"}</b></div>
+            <div><span>줄바꿈</span><b>{rules.line_breaks||"-"}</b></div>
+            <div><span>마무리</span><b>{rules.ending||"-"}</b></div>
+            <div><span>이모지</span><b>{rules.emoji||"-"}</b></div>
+            <div><span>구조</span><b>{rules.structure||"-"}</b></div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <SectionTitle title={`참고 계정 (${data.sources?.length||0})`}/>
+          {(data.sources||[]).length?(data.sources||[]).map(s=><div className="style-source" key={s.id}><div><b>{s.source_handle}</b><span>{s.label||"메모 없음"}</span></div><span className="badge green">활성</span></div>):<EmptyState title="등록된 참고 계정이 없습니다." desc="왼쪽에서 참고 Threads 계정과 게시물 샘플을 넣어 학습을 시작하세요."/>}
+        </div>
+      </div>
+    </div>
+  </>;
+}
+
 function QualityPanel({quality}){
   const icon=quality.status==="ready"?<CheckCircle2/>:quality.status==="review"?<AlertTriangle/>:<XCircle/>;
   return <div className={`quality-card ${quality.status}`}>
@@ -283,7 +395,7 @@ function Writer({accounts,posts,onSaved}){
     <div className="writer-grid">
       <div className="panel composer">
         <label>계정 선택</label><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
-        <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span></div>
+        <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span>{selected?.style_sample_count>0&&<small>학습 스타일 {selected.style_confidence}% · 샘플 {selected.style_sample_count}개 · {(selected.learned_style?.style_tags||[]).join(" · ")}</small>}</div>
         <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
         {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 저장소 연결 전까지 품질 검사 용도로만 사용됩니다.</span></label>}
@@ -376,6 +488,7 @@ export default function App(){
     dashboard:<Dashboard data={dashboard} loading={loading} onRefresh={loadAll} onCreate={()=>setPage("writer")} onAddAccount={()=>setModal(true)}/>,
     accounts:<Accounts accounts={accounts} loading={loading} onAdd={()=>setModal(true)} onRefresh={loadAll}/>,
     content:<ContentSettings accounts={accounts}/>,
+    learning:<StyleLearning accounts={accounts} onRefresh={loadAll}/>,
     writer:<Writer accounts={accounts} posts={posts} onSaved={loadAll}/>,
     scheduler:<Scheduler schedules={schedules}/>,
     history:<HistoryPage posts={posts}/>,

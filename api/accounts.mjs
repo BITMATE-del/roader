@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
       const rows = await sql(
         "insert into roader_accounts (name,handle,sector,target_audience,tone,persona,daily_post_goal,cta_ratio,telegram_source_code) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *",
-        [name, handle, String(body.sector || ""), String(body.target_audience || ""), String(body.tone || ""), String(body.persona || ""), Number(body.daily_post_goal || 5), Number(body.cta_ratio || 5), String(body.telegram_source_code || "")]
+        [name, handle, String(body.sector || ""), String(body.target_audience || ""), String(body.tone || ""), String(body.persona || ""), Number(body.daily_post_goal || 0), Number(body.cta_ratio || 0), String(body.telegram_source_code || "")]
       );
       const account = rows[0];
 

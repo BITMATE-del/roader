@@ -28,7 +28,7 @@ const postTypes = [
 
 const initialAccountForm = {
   name:"", handle:"", sector:"", target_audience:"", tone:"", persona:"",
-  daily_post_goal:5, cta_ratio:5, telegram_source_code:""
+  daily_post_goal:"", cta_ratio:"", telegram_source_code:""
 };
 
 function fmt(n){
@@ -110,18 +110,18 @@ function AccountModal({open,onClose,onSaved}){
     <div className="modal-card">
       <SectionTitle title="Threads 계정 추가"/>
       <div className="form-grid">
-        <div><label>계정명 *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="예: 부의 길잡이"/></div>
+        <div><label>계정명 *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="계정 표시 이름"/></div>
         <div><label>Threads 핸들 *</label><input value={form.handle} onChange={e=>set("handle",e.target.value)} placeholder="@username"/></div>
-        <div><label>섹터</label><input value={form.sector} onChange={e=>set("sector",e.target.value)} placeholder="국내주식 / 반도체"/></div>
-        <div><label>타깃</label><input value={form.target_audience} onChange={e=>set("target_audience",e.target.value)} placeholder="40~60대 투자자"/></div>
-        <div><label>기본 톤</label><input value={form.tone} onChange={e=>set("tone",e.target.value)} placeholder="차분함 · 신뢰감"/></div>
-        <div><label>하루 게시 목표</label><input type="number" min="1" max="30" value={form.daily_post_goal} onChange={e=>set("daily_post_goal",Number(e.target.value))}/></div>
+        <div><label>섹터</label><input value={form.sector} onChange={e=>set("sector",e.target.value)} placeholder="운영 섹터 입력"/></div>
+        <div><label>타깃</label><input value={form.target_audience} onChange={e=>set("target_audience",e.target.value)} placeholder="주요 타깃 입력"/></div>
+        <div><label>기본 톤</label><input value={form.tone} onChange={e=>set("tone",e.target.value)} placeholder="기본 말투와 톤 입력"/></div>
+        <div><label>하루 게시 목표</label><input type="number" min="0" max="30" value={form.daily_post_goal} onChange={e=>set("daily_post_goal",e.target.value===""?"":Number(e.target.value))} placeholder="미설정"/></div>
       </div>
       <label>계정 페르소나 / 작성 규칙</label>
       <textarea rows="4" value={form.persona} onChange={e=>set("persona",e.target.value)} placeholder="이 계정이 어떤 관점과 말투로 글을 써야 하는지 적어주세요."/>
       <div className="form-grid">
-        <div><label>CTA 비율 (%)</label><input type="number" min="0" max="100" value={form.cta_ratio} onChange={e=>set("cta_ratio",Number(e.target.value))}/></div>
-        <div><label>Telegram 유입코드</label><input value={form.telegram_source_code} onChange={e=>set("telegram_source_code",e.target.value)} placeholder="threads_profile_01"/></div>
+        <div><label>CTA 비율 (%)</label><input type="number" min="0" max="100" value={form.cta_ratio} onChange={e=>set("cta_ratio",e.target.value===""?"":Number(e.target.value))} placeholder="미설정"/></div>
+        <div><label>Telegram 유입코드</label><input value={form.telegram_source_code} onChange={e=>set("telegram_source_code",e.target.value)} placeholder="Telegram 유입코드 입력"/></div>
       </div>
       {error&&<div className="form-error">{error}</div>}
       <div className="modal-actions"><button className="ghost" onClick={onClose}>취소</button><button className="primary" onClick={save} disabled={saving}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 저장</button></div>
@@ -134,9 +134,7 @@ function Dashboard({data,loading,onRefresh,onCreate,onAddAccount}){
   const accounts=data?.accounts||[];
   const schedules=data?.schedules||[];
   const posts=data?.posts||[];
-  const goal=100000;
   const views=Number(totals.views||0);
-  const pct=Math.min(100,Math.round((views/goal)*100));
 
   return <>
     <div className="hero-row">
@@ -174,19 +172,13 @@ function Dashboard({data,loading,onRefresh,onCreate,onAddAccount}){
       </tbody></table></div>}
     </div>
 
-    <div className="bottom-grid">
+    <div>
       <div className="panel">
         <SectionTitle title="최근 게시 성과"/>
         {posts.length===0?<EmptyState title="저장된 게시물이 없습니다." desc="실제 게시물이 저장되면 최신 성과가 표시됩니다."/>:
         <div className="table-wrap"><table><thead><tr><th>게시물</th><th>계정</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>프로필 방문</th><th>봇 진입</th></tr></thead><tbody>
           {posts.map(p=><tr key={p.id}><td className="text-cell">{p.body}</td><td>{p.account_name}</td><td>{fmt(p.views)}</td><td>{fmt(p.likes)}</td><td>{fmt(p.replies)}</td><td>{fmt(p.profile_visits)}</td><td>{fmt(p.bot_entries)}</td></tr>)}
         </tbody></table></div>}
-      </div>
-      <div className="panel goal">
-        <SectionTitle title="이번 달 목표"/>
-        <div className="goal-number">100,000 <span>노출</span></div>
-        <div className="progress"><i style={{width:`${pct}%`}}/></div>
-        <div className="muted">{fmt(views)} / 100,000 · {pct}%</div>
       </div>
     </div>
   </>;
@@ -229,7 +221,7 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
       :<div className="account-list">{filtered.map(a=><div className="account-list-card" key={a.id}>
         <div className="avatar xl">{String(a.name||"?").slice(0,1)}</div>
         <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span>{a.threads_user_id?<span className="badge green">Threads 연결됨</span>:<span className="badge gray">Threads 미연결</span>}</div>
-        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>하루 {a.daily_post_goal}개</span><span>CTA {a.cta_ratio}%</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div></div>
+        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>{a.daily_post_goal?`하루 ${a.daily_post_goal}개`:"게시 목표 미설정"}</span><span>{a.cta_ratio!=null&&Number(a.cta_ratio)>0?`CTA ${a.cta_ratio}%`:"CTA 미설정"}</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div></div>
         <div className="account-actions">
           <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
             {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
@@ -255,15 +247,15 @@ function ContentSettings({accounts}){
         <div className="form-grid">
           <div><label>주요 타깃</label><input value={a.target_audience||""} readOnly/></div>
           <div><label>기본 톤</label><input value={a.tone||""} readOnly/></div>
-          <div><label>기본 게시물 길이</label><input value={`${a.min_chars||180}~${a.max_chars||420}자`} readOnly/></div>
+          <div><label>기본 게시물 길이</label><input value={a.min_chars!=null&&a.max_chars!=null?`${a.min_chars}~${a.max_chars}자`:"미설정"} readOnly/></div>
           <div><label>하루 게시 목표</label><input value={a.daily_post_goal||0} readOnly/></div>
         </div>
         <label>페르소나</label><textarea rows="6" value={a.persona||""} readOnly/>
       </div>
       <div className="panel">
         <SectionTitle title="품질 기준"/>
-        <div className="kv"><span>최소 검토 기준</span><b>{a.quality_threshold||80}점</b></div>
-        <div className="kv"><span>자동 예약 가능 기준</span><b>{a.auto_publish_threshold||90}점</b></div>
+        <div className="kv"><span>최소 검토 기준</span><b>{a.quality_threshold!=null?`${a.quality_threshold}점`:"미설정"}</b></div>
+        <div className="kv"><span>자동 예약 가능 기준</span><b>{a.auto_publish_threshold!=null?`${a.auto_publish_threshold}점`:"미설정"}</b></div>
         <div className="kv"><span>CTA 비율</span><b>{a.cta_ratio||0}%</b></div>
         <label>콘텐츠 비중</label>
         {Object.entries(a.type_mix||{}).length?Object.entries(a.type_mix).map(([n,v])=><div className="ratio" key={n}><span>{n}</span><div><i style={{width:`${Math.min(100,Number(v)*2)}%`}}/></div><b>{v}%</b></div>):<div className="muted">기본 프로필 생성 대기</div>}
@@ -558,14 +550,10 @@ export default function App(){
     settings:<SettingsPage/>
   }[page];
 
-  const views=Number(dashboard?.totals?.views||0);
-  const pct=Math.min(100,Math.round(views/1000));
-
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">R</div><div><strong>ROADER</strong><span>Threads Content & Lead Automation</span></div></div>
       <nav>{navItems.map(([Icon,label,key])=><button key={key} className={page===key?"active":""} onClick={()=>setPage(key)}><Icon size={19}/><span>{label}</span></button>)}</nav>
-      <div className="sidebar-goal"><span>이번 달 목표</span><strong>100,000 <small>노출</small></strong><div><i style={{width:`${pct}%`}}/></div><small>{fmt(views)} ({pct}%)</small></div>
     </aside>
     <main>
       <header><div className="date-pill">{new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short"}).format(new Date())}</div><div className="admin"><div>●</div><span>관리자</span><ChevronDown size={14}/></div></header>

@@ -16,7 +16,7 @@ export default async function handler(req,res){
   const rows=await sql("select id,handle from roader_accounts where id=$1 limit 1",[accountId]);
   if(!rows[0]) return res.status(404).json({ok:false,error:"account_not_found"});
 
-  const scope=["threads_basic","threads_content_publish","threads_manage_replies","threads_manage_insights"].join(",");
+  const scope=["threads_basic","threads_content_publish","threads_manage_replies","threads_manage_insights","threads_profile_discovery"].join(",");
   const url=new URL("https://threads.net/oauth/authorize");
   url.searchParams.set("client_id",APP_ID);
   url.searchParams.set("redirect_uri",REDIRECT_URI);

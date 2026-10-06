@@ -395,10 +395,7 @@ function StyleLearning({accounts,onRefresh}){
   const [data,setData]=useState({sources:[],profile:null,samples:[]});
   const [loading,setLoading]=useState(false);
   const [message,setMessage]=useState("");
-  const [integrations,setIntegrations]=useState({threads:{configured:false}});
-
   useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
-  useEffect(()=>{ api("/api/integrations").then(setIntegrations).catch(()=>{}); },[]);
 
   async function load(id=account){
     if(!id) return;
@@ -427,9 +424,9 @@ function StyleLearning({accounts,onRefresh}){
       await load(account);
       await onRefresh();
     }catch(e){
-      if(e.message==="threads_access_token_missing") setMessage("Threads API 토큰이 아직 연결되지 않았습니다.");
-      else if(e.message==="threads_profile_discovery_required") setMessage("Meta 앱에 threads_profile_discovery 권한 승인이 필요합니다.");
-      else setMessage("참고 계정 게시물 자동 수집에 실패했습니다.");
+      if(e.message==="threads_account_not_connected") setMessage("선택한 ROADER 계정을 먼저 Threads에 연결해주세요.");
+      else if(e.message==="threads_profile_discovery_required") setMessage("공개 프로필 수집 권한이 없습니다. 계정 관리에서 이 Threads 계정을 한 번 다시 연결해 threads_profile_discovery 권한을 승인해주세요.");
+      else setMessage("참고 계정 게시물 자동 수집에 실패했습니다."+(e.details?" · "+e.details:""));
     }finally{setLoading(false);}
   }
 
@@ -478,11 +475,11 @@ function StyleLearning({accounts,onRefresh}){
           <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="참고 계정 용도 메모"/></div>
         </div>
 
-        <div className={`integration-strip ${integrations?.threads?.configured?"ready":"waiting"}`}>
-          <div><b>Threads 공개 프로필 자동 수집</b><span>{integrations?.threads?.configured?"API 토큰 연결됨":"API 토큰 연결 필요"}</span></div>
-          <span className={`badge ${integrations?.threads?.configured?"green":"gray"}`}>{integrations?.threads?.configured?"사용 가능":"미연결"}</span>
+        <div className={`integration-strip ${selected?.threads_user_id?"ready":"waiting"}`}>
+          <div><b>Threads 공개 프로필 자동 수집</b><span>{selected?.threads_user_id?`연결 계정 ${selected.threads_username||selected.handle} 토큰 사용`:"선택한 ROADER 계정의 Threads 연결 필요"}</span></div>
+          <span className={`badge ${selected?.threads_user_id?"green":"gray"}`}>{selected?.threads_user_id?"연결됨":"미연결"}</span>
         </div>
-        <button className="generate secondary-generate" onClick={autoFetch} disabled={loading||!sourceHandle.trim()}>{loading?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} 이 계정 게시물 자동 가져오기 + 학습</button>
+        <button className="generate secondary-generate" onClick={autoFetch} disabled={loading||!sourceHandle.trim()||!selected?.threads_user_id}>{loading?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} 이 계정 게시물 자동 가져오기 + 학습</button>
 
         <div className="or-divider"><span>또는 직접 샘플 입력</span></div>
 

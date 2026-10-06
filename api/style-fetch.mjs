@@ -101,15 +101,22 @@ export default async function handler(req,res){
     await ensureSchema();
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
 
-    const token=process.env.THREADS_ACCESS_TOKEN;
-    if(!token) return res.status(503).json({ok:false,error:"threads_access_token_missing"});
-
     const b=req.body||{};
     const accountId=Number(b.account_id||0);
     const sourceHandle=String(b.source_handle||"").trim().replace(/^@/,"");
     if(!accountId||!sourceHandle) return res.status(400).json({ok:false,error:"account_and_source_required"});
 
     const sql=client();
+    const accountRows=await sql(
+      "select id,handle,threads_user_id,threads_access_token_encrypted from roader_accounts where id=$1 limit 1",
+      [accountId]
+    );
+    const account=accountRows[0];
+    if(!account) return res.status(404).json({ok:false,error:"account_not_found"});
+    const token=String(account.threads_access_token_encrypted||"");
+    if(!account.threads_user_id||!token){
+      return res.status(409).json({ok:false,error:"threads_account_not_connected"});
+    }
     const sourceRows=await sql(
       "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
       [accountId,"@"+sourceHandle,String(b.label||"")]
@@ -149,11 +156,17 @@ export default async function handler(req,res){
         "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
         [String(error?.message||"threads_api_error").slice(0,500),source.id]
       );
-      const permission = String(error?.message||"").toLowerCase().includes("permission");
+      const lower=String(error?.message||"").toLowerCase();
+      const permission=
+        lower.includes("permission") ||
+        lower.includes("access token") ||
+        Number(error?.code)===10 ||
+        Number(error?.code)===200;
       return res.status(permission?403:502).json({
         ok:false,
         error:permission?"threads_profile_discovery_required":"threads_fetch_failed",
-        message:String(error?.message||"threads_api_error")
+        message:String(error?.message||"threads_api_error"),
+        code:error?.code||null
       });
     }
   }catch(error){

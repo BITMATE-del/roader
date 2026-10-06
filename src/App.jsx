@@ -508,6 +508,8 @@ function Writer({accounts,posts,onSaved}){
   const [image,setImage]=useState(null);
   const [saving,setSaving]=useState(false);
   const [publishing,setPublishing]=useState(false);
+  const [generating,setGenerating]=useState(false);
+  const [aiTopic,setAiTopic]=useState("");
   const [message,setMessage]=useState("");
   const [messageType,setMessageType]=useState("success");
   const [replyText,setReplyText]=useState("제가 지금 보고 있는 종목들은\n단순히 “오를 것 같다”는 느낌으로 고르지는 않습니다.\n\n수급 · 실적 · 모멘텀 · 시장 관심도를 따로 보고\n종목별로 점수를 나눠서 보고 있습니다.\n\n현재 관심 있게 보고 있는 섹터와 종목들도 계속 업데이트하고 있으니\n궁금하신 분들은 프로필에서 무료로 확인해보셔도 됩니다.");
@@ -521,6 +523,30 @@ function Writer({accounts,posts,onSaved}){
   }),[text,mediaMode,image,posts]);
   const selected=accounts.find(a=>String(a.id)===account);
   const connected=!!selected?.threads_user_id;
+
+  async function generateWithAI(){
+    if(!account||generating) return;
+    setGenerating(true);setMessage("");setMessageType("success");
+    try{
+      const result=await api("/api/ai/generate",{method:"POST",body:JSON.stringify({
+        account_id:Number(account),
+        post_type:type,
+        topic:aiTopic.trim()
+      })});
+      setText(result.body||"");
+      setReplyText(result.reply||"");
+      setMessage(`AI 초안 생성 완료 · ${result.model||"AI"}`);
+    }catch(e){
+      setMessageType("error");
+      const map={
+        openai_not_configured:"AI 생성 API가 아직 연결되지 않았습니다. Vercel에 OPENAI_API_KEY가 필요합니다.",
+        account_not_found:"선택한 계정을 찾지 못했습니다.",
+        generation_failed:"AI 생성에 실패했습니다."
+      };
+      const base=map[e.message]||`AI 생성 실패 · ${e.message||"server_error"}`;
+      setMessage(e.details?`${base} · ${e.details}`:base);
+    }finally{setGenerating(false);}
+  }
 
   async function saveDraft(){
     if(!account||!text.trim()) return;
@@ -599,6 +625,15 @@ function Writer({accounts,posts,onSaved}){
       <div className="panel composer">
         <label>계정 선택</label><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
         <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span><small>{connected?"Threads 연결됨 · 실제 게시 가능":"Threads 미연결 · 계정 관리에서 먼저 연결 필요"}</small>{selected?.style_sample_count>0&&<small>학습 스타일 {selected.style_confidence}% · 샘플 {selected.style_sample_count}개 · {(selected.learned_style?.style_tags||[]).join(" · ")}</small>}</div>
+        <div className="ai-generate-box">
+          <div className="ai-generate-head"><div><b>AI 자동 작성</b><span>주제나 핵심 포인트만 입력하면 본문과 1차 댓글을 같이 작성합니다.</span></div><Sparkles size={18}/></div>
+          <textarea rows="3" value={aiTopic} onChange={e=>setAiTopic(e.target.value)} placeholder="예: 오늘 반도체 흐름 / 삼성전자·SK하이닉스 / 이미 오른 종목보다 본격 상승 전 구간에 있는 종목을 보는 관점"/>
+          <button className="ai-generate-btn" onClick={generateWithAI} disabled={generating||!account}>
+            {generating?<Loader2 className="spin" size={16}/>:<WandSparkles size={16}/>}
+            {generating?"AI가 작성 중...":"AI 본문 + 댓글 생성"}
+          </button>
+          <small>구체적인 현재 시장 사실을 넣을수록 정확합니다. 입력이 비어 있으면 계정 섹터와 페르소나를 기준으로 과장 없이 작성합니다.</small>
+        </div>
         <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
         {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 실제 게시를 위해 저장소 연결이 필요합니다.</span></label>}
@@ -609,8 +644,8 @@ function Writer({accounts,posts,onSaved}){
           <small>본문 게시가 성공하면 이 내용을 바로 첫 댓글로 등록합니다. 프로필 유입용 문구는 게시 전 수정할 수 있습니다.</small>
         </div>
         <div className="publish-actions">
-          <button className="ghost draft-action" onClick={saveDraft} disabled={saving||publishing||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 초안 저장</button>
-          <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||!connected||mediaMode!=="text"||!text.trim()||quality.status==="blocked"}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>
+          <button className="ghost draft-action" onClick={saveDraft} disabled={saving||publishing||generating||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 초안 저장</button>
+          <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||generating||!connected||mediaMode!=="text"||!text.trim()||quality.status==="blocked"}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>
         </div>
         {message&&<div className={messageType==="error"?"form-error":"save-message"}>{message}</div>}
       </div>

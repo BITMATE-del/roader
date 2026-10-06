@@ -100,20 +100,30 @@ async function fetchPublicPosts(username, token){
 export default async function handler(req,res){
   try{
     await ensureSchema();
-    if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
+    if(req.method!=="POST"){
+      return res.status(405).json({ok:false,error:"method_not_allowed"});
+    }
 
     const b=req.body||{};
     const accountId=Number(b.account_id||0);
     const sourceHandle=String(b.source_handle||"").trim().replace(/^@/,"");
-    if(!accountId||!sourceHandle) return res.status(400).json({ok:false,error:"account_and_source_required"});
+    if(!accountId||!sourceHandle){
+      return res.status(400).json({ok:false,error:"account_and_source_required"});
+    }
 
     const sql=client();
-    const accountRows=await sql("select id,handle from roader_accounts where id=$1 limit 1",[accountId]);
+
+    const accountRows=await sql(
+      "select id,handle,threads_user_id from roader_accounts where id=$1 limit 1",
+      [accountId]
+    );
     const account=accountRows[0];
-    if(!account) return res.status(404).json({ok:false,error:"account_not_found"});
+    if(!account){
+      return res.status(404).json({ok:false,error:"account_not_found"});
+    }
 
     const sourceRows=await sql(
-      "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
+      "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set label=excluded.label,is_active=true,updated_at=now() returning *",
       [accountId,"@"+sourceHandle,String(b.label||"")]
     );
     const source=sourceRows[0];
@@ -123,36 +133,43 @@ export default async function handler(req,res){
       token=await getValidThreadsToken(sql,accountId);
     }catch(tokenError){
       const code=tokenError?.code||"threads_token_refresh_failed";
-      const readable=code==="threads_token_expired"
-        ?"Threads 연결 토큰이 만료되었습니다. 계정 관리에서 Threads 다시 연결이 필요합니다."
-        :code==="threads_account_not_connected"
-          ?"선택한 ROADER 계정이 Threads에 연결되어 있지 않습니다."
-          :"Threads 토큰 갱신에 실패했습니다.";
+      const readable=
+        code==="threads_token_expired"
+          ?"Threads 연결 토큰이 만료되었습니다. 계정 관리에서 Threads 다시 연결이 필요합니다."
+          :code==="threads_account_not_connected"
+            ?"선택한 ROADER 계정이 Threads에 연결되어 있지 않습니다."
+            :"Threads 토큰 갱신에 실패했습니다.";
+
       await sql(
         "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
         [readable,source.id]
       );
-      if(code==="threads_account_not_connected"){
-        return res.status(409).json({ok:false,error:code,message:readable});
-      }
-      if(code==="threads_token_expired"){
-        return res.status(401).json({ok:false,error:code,message:readable});
-      }
-      return res.status(502).json({ok:false,error:code,message:readable});
+
+      const status=
+        code==="threads_token_expired"?401:
+        code==="threads_account_not_connected"?409:
+        502;
+
+      return res.status(status).json({
+        ok:false,
+        error:code,
+        message:readable
+      });
     }
-    
-      "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
-      [accountId,"@"+sourceHandle,String(b.label||"")]
-    );
-    const source=sourceRows[0];
 
     try{
       const posts=await fetchPublicPosts(sourceHandle,token);
-      const textPosts=posts.map(p=>String(p?.text||"").trim()).filter(t=>t.length>=20);
+      const textPosts=posts
+        .map(p=>String(p?.text||"").trim())
+        .filter(t=>t.length>=20);
 
       let inserted=0;
       for(const body of textPosts){
-        const hash=crypto.createHash("sha256").update(body.replace(/\s+/g," ").trim()).digest("hex");
+        const hash=crypto
+          .createHash("sha256")
+          .update(body.replace(/\s+/g," ").trim())
+          .digest("hex");
+
         const rows=await sql(
           "insert into roader_style_samples (account_id,source_id,body,sample_hash) values ($1,$2,$3,$4) on conflict (source_id,sample_hash) do nothing returning id",
           [accountId,source.id,body,hash]
@@ -166,6 +183,7 @@ export default async function handler(req,res){
       );
 
       const rebuilt=await rebuild(sql,accountId);
+
       return res.status(200).json({
         ok:true,
         source_handle:"@"+sourceHandle,
@@ -175,32 +193,50 @@ export default async function handler(req,res){
         ...rebuilt
       });
     }catch(error){
-      await sql(
-        "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
-        [String(error?.message||"threads_api_error").slice(0,500),source.id]
-      );
-      if(isThreadsExpiredError(error?.message)){
+      const rawMessage=String(error?.message||"threads_api_error");
+
+      if(isThreadsExpiredError(rawMessage)){
+        const readable="Threads 연결 토큰이 만료되었습니다. 계정 관리에서 Threads 다시 연결이 필요합니다.";
+        await sql(
+          "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
+          [readable,source.id]
+        );
         return res.status(401).json({
           ok:false,
           error:"threads_token_expired",
-          message:String(error?.message||"threads token expired")
+          message:readable
         });
       }
-      const lower=String(error?.message||"").toLowerCase();
+
+      const lower=rawMessage.toLowerCase();
       const permission=
         lower.includes("permission") ||
-        lower.includes("access token") ||
+        lower.includes("not authorized") ||
         Number(error?.code)===10 ||
         Number(error?.code)===200;
+
+      const readable=permission
+        ?"공개 프로필 수집 권한이 없습니다. 계정 관리에서 Threads 다시 연결 후 threads_profile_discovery 권한을 승인해주세요."
+        :rawMessage;
+
+      await sql(
+        "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
+        [readable.slice(0,500),source.id]
+      );
+
       return res.status(permission?403:502).json({
         ok:false,
         error:permission?"threads_profile_discovery_required":"threads_fetch_failed",
-        message:String(error?.message||"threads_api_error"),
+        message:readable,
         code:error?.code||null
       });
     }
   }catch(error){
     console.error("style-fetch",error);
-    return res.status(500).json({ok:false,error:"server_error"});
+    return res.status(500).json({
+      ok:false,
+      error:"server_error",
+      message:String(error?.message||"server_error")
+    });
   }
 }

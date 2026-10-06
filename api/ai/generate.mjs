@@ -174,6 +174,76 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
   try{return JSON.parse(output);}catch{return null;}
 }
 
+
+function unicodeLength(value){
+  return Array.from(String(value||"")).length;
+}
+
+async function compressThreadsDraft({model,body,reply,isCrypto}){
+  const response=await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "authorization":`Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body:JSON.stringify({
+      model,
+      reasoning:{effort:"low"},
+      instructions:[
+        "Threads 게시물 길이 제한에 맞게 글을 압축한다.",
+        "본문은 반드시 470자 이하, 첫 댓글은 반드시 300자 이하로 만든다.",
+        "핵심 사실과 숫자는 바꾸지 않는다.",
+        isCrypto
+          ?"코인 글에서는 현재 원화 가격, 핵심 이슈, 상승 조건, 조정 조건, 핵심 가격대를 우선 보존한다."
+          :"핵심 주장, 근거, 전망, 질문을 우선 보존한다.",
+        "군더더기 표현과 반복 설명부터 삭제한다.",
+        "후킹 첫 문장은 유지하거나 더 짧고 강하게 만든다.",
+        "한 문단 1~2문장, 모바일에서 읽기 쉬운 자연스러운 한국어를 유지한다.",
+        "새로운 사실이나 숫자를 추가하지 않는다.",
+        "JSON만 반환한다."
+      ].join("\n"),
+      input:JSON.stringify({body,reply}),
+      text:{
+        format:{
+          type:"json_schema",
+          name:"threads_length_fit",
+          strict:true,
+          schema:{
+            type:"object",
+            additionalProperties:false,
+            properties:{
+              body:{type:"string"},
+              reply:{type:"string"}
+            },
+            required:["body","reply"]
+          }
+        }
+      }
+    })
+  });
+
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) return null;
+  const output=extractOutputText(data);
+  try{return JSON.parse(output);}catch{return null;}
+}
+
+function hardFitThreadsText(value,maxChars){
+  const text=String(value||"").trim();
+  if(unicodeLength(text)<=maxChars) return text;
+
+  const paragraphs=text.split(/\n{2,}/).map(v=>v.trim()).filter(Boolean);
+  const kept=[];
+  for(const p of paragraphs){
+    const candidate=[...kept,p].join("\n\n");
+    if(unicodeLength(candidate)<=maxChars) kept.push(p);
+    else break;
+  }
+  if(kept.length) return kept.join("\n\n");
+
+  return Array.from(text).slice(0,maxChars).join("").trim();
+}
+
 export default async function handler(req,res){
   try{
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
@@ -242,6 +312,7 @@ export default async function handler(req,res){
       "프로필 CTA는 너무 딱딱하게 '확인하세요'로 끝내지 말고 '무료로 확인해보셔도 됩니다', '무료 정보 한번 받아가셔도 됩니다'처럼 자연스럽고 부드럽게 마무리한다.",
       "광고처럼 과장하지 말고 정보 계정의 자연스러운 추가 안내처럼 작성한다.",
       "마크다운 굵게(**), 제목 기호(#), 과도한 이모지와 불릿은 사용하지 않는다.",
+      "Threads 본문은 반드시 470자 이하로 작성한다. 첫 댓글은 반드시 300자 이하로 작성한다. 제한을 넘길 것 같으면 반복 설명과 군더더기를 줄이고 핵심만 남긴다.",
       "최종 출력은 지정된 JSON 스키마만 반환한다.",
       "코인 소재라면 symbol 필드에는 거래소에서 사용하는 영문 티커만 넣는다. 예: ORCA, ADA, SOL. 코인 소재가 아니면 빈 문자열로 둔다.",
       ...(isCrypto ? [
@@ -284,7 +355,7 @@ export default async function handler(req,res){
       topic_override:topicOverride||null,
       preferred_post_type:requestedType||null,
       content_mix:account.type_mix||{},
-      target_length:{min:account.min_chars,max:account.max_chars},
+      target_length:{min:Math.min(Number(account.min_chars||180),420),max:Math.min(Number(account.max_chars||420),470)},
       mobile_format:mobile,
       learned_style:account.style_confidence>=50?learned:{},
       recent_published_posts:recentPosts
@@ -352,12 +423,33 @@ export default async function handler(req,res){
       }
     }
 
+    let finalBody=formatMobileText(parsed.body||"");
+    let finalReply=formatMobileText(parsed.reply||"");
+
+    if(unicodeLength(finalBody)>470 || unicodeLength(finalReply)>300){
+      const compressed=await compressThreadsDraft({
+        model,
+        body:finalBody,
+        reply:finalReply,
+        isCrypto
+      });
+      if(compressed){
+        finalBody=formatMobileText(compressed.body||finalBody);
+        finalReply=formatMobileText(compressed.reply||finalReply);
+      }
+    }
+
+    finalBody=hardFitThreadsText(finalBody,490);
+    finalReply=hardFitThreadsText(finalReply,490);
+
     return res.status(200).json({
       ok:true,
       selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
       symbol:normalizeTicker(parsed.symbol||""),
-      body:formatMobileText(parsed.body||""),
-      reply:formatMobileText(parsed.reply||""),
+      body:finalBody,
+      reply:finalReply,
+      body_length:unicodeLength(finalBody),
+      reply_length:unicodeLength(finalReply),
       live_market:liveMarket,
       model
     });

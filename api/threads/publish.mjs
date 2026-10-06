@@ -15,6 +15,10 @@ function metaError(data){
   return data?.error?.message||data?.error_message||data?.message||null;
 }
 
+function unicodeLength(value){
+  return Array.from(String(value||"")).length;
+}
+
 export default async function handler(req,res){
   let postId=null;
   try{
@@ -28,6 +32,27 @@ export default async function handler(req,res){
 
     if(!accountId||!text) return res.status(400).json({ok:false,error:"account_id_and_body_required"});
     if(mediaMode!=="text") return res.status(400).json({ok:false,error:"text_only_for_now"});
+
+    const textLength=unicodeLength(text);
+    const replyLength=unicodeLength(replyText);
+    if(textLength>500){
+      return res.status(400).json({
+        ok:false,
+        error:"threads_text_too_long",
+        details:`본문이 ${textLength}자입니다. Threads 본문은 최대 500자까지 게시할 수 있습니다.`,
+        current_length:textLength,
+        max_length:500
+      });
+    }
+    if(replyLength>500){
+      return res.status(400).json({
+        ok:false,
+        error:"threads_reply_too_long",
+        details:`첫 댓글이 ${replyLength}자입니다. Threads 댓글은 최대 500자까지 게시할 수 있습니다.`,
+        current_length:replyLength,
+        max_length:500
+      });
+    }
 
     await ensureSchema();
     const sql=client();

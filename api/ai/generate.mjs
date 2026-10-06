@@ -47,7 +47,7 @@ export default async function handler(req,res){
     if(!account) return res.status(404).json({ok:false,error:"account_not_found"});
 
     const recent=await sql(
-      "select post_type,body,published_at from roader_posts where account_id=$1 and status='published' order by published_at desc nulls last,created_at desc limit 12",
+      "select post_type,body,published_at from roader_posts where account_id=$1 and status='published' order by published_at desc nulls last,created_at desc limit 24",
       [accountId]
     );
 
@@ -55,6 +55,8 @@ export default async function handler(req,res){
     const topicOverride=String(body.topic||"").trim();
     const learned=account.learned_style||{};
     const mobile=account.style_rules?.mobile_format||{};
+    const sectorText=String(account.sector||"").toLowerCase();
+    const isCrypto=/코인|crypto|가상자산|암호화폐/.test(sectorText);
 
     const recentPosts=recent.map(r=>({
       post_type:r.post_type,
@@ -89,7 +91,20 @@ export default async function handler(req,res){
       "프로필 CTA는 너무 딱딱하게 '확인하세요'로 끝내지 말고 '무료로 확인해보셔도 됩니다', '무료 정보 한번 받아가셔도 됩니다'처럼 자연스럽고 부드럽게 마무리한다.",
       "광고처럼 과장하지 말고 정보 계정의 자연스러운 추가 안내처럼 작성한다.",
       "마크다운 굵게(**), 제목 기호(#), 과도한 이모지와 불릿은 사용하지 않는다.",
-      "최종 출력은 지정된 JSON 스키마만 반환한다."
+      "최종 출력은 지정된 JSON 스키마만 반환한다.",
+      ...(isCrypto ? [
+        "이 계정은 코인 전용 계정이다. 비트코인을 습관적으로 첫 소재로 선택하지 않는다.",
+        "자동 소재 선정 시 먼저 최근 24~72시간의 코인 시장에서 실제로 관심이 증가한 테마와 종목 후보를 여러 개 탐색한 뒤 가장 시의성 있는 하나를 선택한다.",
+        "후보 탐색 범위에는 알트코인, 신규/재부상 내러티브, L1/L2, AI·DePIN·RWA·게임·밈·DEX·스테이블코인·디파이·프라이버시·인프라 등 현재 시장에서 실제로 움직이는 섹터를 폭넓게 포함한다.",
+        "검색 시 단순 가격 상승률만 보지 말고 거래량 변화, 시장 관심도, 주요 업데이트·상장·파트너십·토큰 이벤트·규제·ETF·온체인 이슈·섹터 순환매 등 왜 지금 관심이 붙는지 확인한다.",
+        "BTC/ETH는 그날 가장 중요한 이슈이거나 전체 시장 방향 설명에 반드시 필요한 경우에만 메인 소재로 선택한다. 그렇지 않으면 보조 맥락으로만 짧게 사용한다.",
+        "최근 게시물에 BTC 또는 ETH 주제가 이미 있었다면, 새롭게 강한 근거가 없는 한 다른 알트코인·테마를 우선한다.",
+        "같은 코인이나 같은 내러티브를 연속해서 반복하지 않는다. 최근 게시물과 종목명·섹터·핵심 논지가 겹치면 다른 후보로 교체한다.",
+        "단순히 많이 오른 코인을 뒤늦게 소개하지 않는다. 이미 급등한 경우에는 추격보다 이후 확인할 조건을 설명하거나, 같은 테마 안에서 아직 관심이 덜 붙은 구간을 찾는다.",
+        "본문은 '오늘 코인 시장에서 실제로 살아 있는 테마 → 왜 지금 움직이는지 → 대표 코인/연관 코인 → 이미 오른 구간과 아직 볼 수 있는 구간 구분 → 제가 체크하는 조건 → 질문' 순서를 우선한다.",
+        "코인명만 나열하지 말고 각 코인이 왜 현재 테마와 연결되는지 한 줄이라도 설명한다.",
+        "검색 결과가 빈약하면 억지로 알트코인을 만들지 말고 시장 전체 이슈를 선택하되, BTC 반복을 피하기 위해 다른 각도에서 설명한다."
+      ] : [])
     ].join("\n");
 
     const context={
@@ -103,6 +118,8 @@ export default async function handler(req,res){
         persona:account.persona
       },
       automation_mode:topicOverride ? "user_override" : "auto_discovery",
+      content_strategy:isCrypto ? "crypto_trend_discovery" : "general_market_discovery",
+      crypto_mode:isCrypto,
       topic_override:topicOverride||null,
       preferred_post_type:requestedType||null,
       content_mix:account.type_mix||{},
@@ -126,7 +143,7 @@ export default async function handler(req,res){
         input:JSON.stringify(context),
         tools:[{
           type:"web_search",
-          search_context_size:"medium"
+          search_context_size:isCrypto?"high":"medium"
         }],
         tool_choice:topicOverride ? "auto" : "required",
         text:{

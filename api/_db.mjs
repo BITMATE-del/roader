@@ -123,6 +123,9 @@ export async function ensureSchema() {
       source_handle text not null,
       label text not null default '',
       is_active boolean not null default true,
+      last_synced_at timestamptz,
+      last_sync_count integer not null default 0,
+      last_error text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       unique(account_id, source_handle)

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { ensureSchema, client } from "./_db.mjs";
+import { getValidThreadsToken, isThreadsExpiredError } from "./_threads-token.mjs";
 
 function clamp(n,min=0,max=100){return Math.max(min,Math.min(max,n));}
 function median(nums){
@@ -107,15 +108,21 @@ export default async function handler(req,res){
     if(!accountId||!sourceHandle) return res.status(400).json({ok:false,error:"account_and_source_required"});
 
     const sql=client();
-    const accountRows=await sql(
-      "select id,handle,threads_user_id,threads_access_token_encrypted from roader_accounts where id=$1 limit 1",
-      [accountId]
-    );
+    const accountRows=await sql("select id,handle from roader_accounts where id=$1 limit 1",[accountId]);
     const account=accountRows[0];
     if(!account) return res.status(404).json({ok:false,error:"account_not_found"});
-    const token=String(account.threads_access_token_encrypted||"");
-    if(!account.threads_user_id||!token){
-      return res.status(409).json({ok:false,error:"threads_account_not_connected"});
+
+    let token;
+    try{
+      token=await getValidThreadsToken(sql,accountId);
+    }catch(tokenError){
+      if(tokenError?.code==="threads_account_not_connected"){
+        return res.status(409).json({ok:false,error:"threads_account_not_connected"});
+      }
+      if(tokenError?.code==="threads_token_expired"){
+        return res.status(401).json({ok:false,error:"threads_token_expired"});
+      }
+      return res.status(502).json({ok:false,error:"threads_token_refresh_failed"});
     }
     const sourceRows=await sql(
       "insert into roader_style_sources (account_id,source_handle,label) values ($1,$2,$3) on conflict (account_id,source_handle) do update set is_active=true,updated_at=now() returning *",
@@ -156,6 +163,13 @@ export default async function handler(req,res){
         "update roader_style_sources set last_error=$1,updated_at=now() where id=$2",
         [String(error?.message||"threads_api_error").slice(0,500),source.id]
       );
+      if(isThreadsExpiredError(error?.message)){
+        return res.status(401).json({
+          ok:false,
+          error:"threads_token_expired",
+          message:String(error?.message||"threads token expired")
+        });
+      }
       const lower=String(error?.message||"").toLowerCase();
       const permission=
         lower.includes("permission") ||

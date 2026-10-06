@@ -1,4 +1,5 @@
 import { ensureSchema, client } from "../_db.mjs";
+import { getValidThreadsToken, isThreadsExpiredError } from "../_threads-token.mjs";
 
 async function graphPost(url, params){
   const response=await fetch(url,{
@@ -56,7 +57,16 @@ export default async function handler(req,res){
     );
     postId=inserted[0]?.id||null;
 
-    const token=String(account.threads_access_token_encrypted);
+    let token;
+    try{
+      token=await getValidThreadsToken(sql,accountId);
+    }catch(tokenError){
+      if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
+      return res.status(tokenError?.code==="threads_token_expired"?401:502).json({
+        ok:false,
+        error:tokenError?.code||"threads_token_refresh_failed"
+      });
+    }
 
     const publish=await graphPost(
       "https://graph.threads.net/v1.0/me/threads",
@@ -72,6 +82,9 @@ export default async function handler(req,res){
       if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
       const details=metaError(publish.data);
       const code=publish.data?.error?.code||publish.data?.error_code||null;
+      if(isThreadsExpiredError(details)){
+        return res.status(401).json({ok:false,error:"threads_token_expired",details,code});
+      }
       console.error("threads-auto-publish",publish.data);
       return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
     }

@@ -1,4 +1,5 @@
 import { ensureSchema, client } from "../_db.mjs";
+import { getValidThreadsToken, isThreadsExpiredError } from "../_threads-token.mjs";
 
 function metricMap(payload){
   const out={views:0,likes:0,replies:0,reposts:0,quotes:0,shares:0};
@@ -28,20 +29,30 @@ export default async function handler(req,res){
     const sql=client();
 
     const posts=await sql(
-      "select p.id,p.threads_post_id,p.account_id,a.threads_access_token_encrypted from roader_posts p join roader_accounts a on a.id=p.account_id where p.status='published' and p.threads_post_id is not null and a.threads_access_token_encrypted is not null order by p.published_at desc nulls last limit 100"
+      "select p.id,p.threads_post_id,p.account_id from roader_posts p join roader_accounts a on a.id=p.account_id where p.status='published' and p.threads_post_id is not null and a.threads_access_token_encrypted is not null order by p.published_at desc nulls last limit 100"
     );
 
     let synced=0,failed=0;
     const errors=[];
 
     for(const post of posts){
-      const result=await fetchInsights(String(post.threads_post_id),String(post.threads_access_token_encrypted));
+      let token;
+      try{
+        token=await getValidThreadsToken(sql,Number(post.account_id));
+      }catch(tokenError){
+        failed++;
+        errors.push({post_id:post.id,code:tokenError?.code||null,message:tokenError?.message||"token_error"});
+        continue;
+      }
+
+      const result=await fetchInsights(String(post.threads_post_id),token);
       if(!result.response.ok){
         failed++;
+        const message=result.data?.error?.message||"insights_failed";
         errors.push({
           post_id:post.id,
           code:result.data?.error?.code||null,
-          message:result.data?.error?.message||"insights_failed"
+          message:isThreadsExpiredError(message)?"threads_token_expired":message
         });
         continue;
       }

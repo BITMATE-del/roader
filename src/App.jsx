@@ -194,17 +194,48 @@ function Dashboard({data,loading,onRefresh,onCreate,onAddAccount}){
 
 function Accounts({accounts,loading,onAdd,onRefresh}){
   const [q,setQ]=useState("");
+  const [connecting,setConnecting]=useState(null);
+  const [message,setMessage]=useState("");
   const filtered=accounts.filter(a=>[a.name,a.handle,a.sector,a.persona].join(" ").toLowerCase().includes(q.toLowerCase()));
+
+  async function connectThreads(accountId){
+    setConnecting(accountId);setMessage("");
+    try{
+      const r=await api(`/api/threads/connect?state=account_${accountId}`);
+      if(!r.url) throw new Error("missing_oauth_url");
+      window.location.href=r.url;
+    }catch(e){
+      setMessage(e.message==="meta_threads_not_configured"?"Meta Threads 환경변수가 아직 Production에 적용되지 않았습니다.":"Threads 연결을 시작하지 못했습니다.");
+      setConnecting(null);
+    }
+  }
+
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("threads_connected")==="1"){
+      setMessage("Threads 계정 연결이 완료되었습니다.");
+      window.history.replaceState({}, "", window.location.pathname);
+      onRefresh();
+    }
+  },[]);
+
   return <>
-    <div className="hero-row"><div><h1>Threads 계정 관리</h1><p>실제로 운영할 계정만 등록됩니다. 샘플 계정은 사용하지 않습니다.</p></div><div className="toolbar"><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button><button className="primary" onClick={onAdd}><Plus size={16}/> 계정 추가</button></div></div>
+    <div className="hero-row"><div><h1>Threads 계정 관리</h1><p>운영 계정을 등록하고 Meta OAuth로 실제 Threads 계정을 연결합니다.</p></div><div className="toolbar"><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button><button className="primary" onClick={onAdd}><Plus size={16}/> 계정 추가</button></div></div>
+    {message&&<div className="save-message">{message}</div>}
     <div className="panel">
       <div className="search-row"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="계정 검색"/></div></div>
       {loading?<div className="loading-line"><Loader2 className="spin"/> 불러오는 중</div>:filtered.length===0?
         <EmptyState title={accounts.length?"검색 결과가 없습니다.":"등록된 계정이 없습니다."} desc={accounts.length?"다른 검색어를 입력해보세요.":"계정 추가 버튼으로 첫 Threads 계정을 등록하세요."} action={!accounts.length?<button className="primary" onClick={onAdd}><Plus size={15}/> 계정 추가</button>:null}/>
       :<div className="account-list">{filtered.map(a=><div className="account-list-card" key={a.id}>
         <div className="avatar xl">{String(a.name||"?").slice(0,1)}</div>
-        <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span></div>
-        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>하루 {a.daily_post_goal}개</span><span>CTA {a.cta_ratio}%</span></div></div>
+        <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span>{a.threads_user_id?<span className="badge green">Threads 연결됨</span>:<span className="badge gray">Threads 미연결</span>}</div>
+        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>하루 {a.daily_post_goal}개</span><span>CTA {a.cta_ratio}%</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div></div>
+        <div className="account-actions">
+          <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
+            {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
+            {a.threads_user_id?"Threads 다시 연결":"Threads 연결"}
+          </button>
+        </div>
       </div>)}</div>}
     </div>
   </>;

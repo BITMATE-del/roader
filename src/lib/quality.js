@@ -40,8 +40,8 @@ function lineStats(text) {
     lines,
     avg: lengths.length ? lengths.reduce((a, b) => a + b, 0) / lengths.length : 0,
     max: lengths.length ? Math.max(...lengths) : 0,
-    long: lengths.filter(v => v > 58).length,
-    veryLong: lengths.filter(v => v > 72).length
+    long: lengths.filter(v => v > 88).length,
+    veryLong: lengths.filter(v => v > 110).length
   };
 }
 
@@ -72,13 +72,13 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   let hook = 45;
   if (firstLine.length >= 8 && firstLine.length <= 38) hook += 25;
   if (/지금|오늘|하나만|vs|왜|체크|먼저|기준/.test(firstLine)) hook += 20;
-  if (firstLine.length > 55) hook -= 20;
+  if (firstLine.length > 72) hook -= 20;
   hook = clamp(hook);
 
   let readability = 42;
   if (lines.avg >= 8 && lines.avg <= 34) readability += 18;
   else if (lines.avg <= 42) readability += 10;
-  if (lines.max <= 58) readability += 12;
+  if (lines.max <= 88) readability += 12;
   if (paragraphs.count >= 5) readability += 24;
   else if (paragraphs.count >= 3) readability += 14;
   else if (paragraphs.count === 2) readability += 6;
@@ -141,7 +141,7 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
     blockers.push("한 문단에는 최대 1~2문장만 사용해주세요. 긴 문단을 분리하세요.");
   }
   if (lines.veryLong > 0) {
-    blockers.push("한 줄이 너무 깁니다. 의미가 바뀌는 지점에서 줄바꿈해 모바일 읽기 흐름을 정리하세요.");
+    blockers.push("문장이 지나치게 깁니다. 의미가 크게 바뀌는 지점에서 한 번만 나눠주세요.");
   }
   if (readability < 65 && !blockers.some(v => v.includes("모바일") || v.includes("문단") || v.includes("한 줄"))) {
     blockers.push("모바일 가독성이 낮습니다. 짧은 문단과 줄바꿈으로 읽기 흐름을 조정하세요.");

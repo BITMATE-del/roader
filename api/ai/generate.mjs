@@ -27,37 +27,50 @@ function sanitizeVisibleText(value){
     .trim();
 }
 
-function splitLongKoreanLine(line,maxChars=64){
-  const text=String(line||"").trim();
-  if(!text||text.length<=maxChars) return text;
+function splitSentenceNaturally(sentence,maxChars=88){
+  const text=String(sentence||"").trim();
+  if(!text||text.length<=maxChars) return [text];
 
-  for(const token of [". ","? ","! ","다. ","요. ","죠. ","예요. ","이에요. "]){
-    const pos=text.lastIndexOf(token,maxChars+18);
-    if(pos>=34){
-      const cut=pos+token.length;
-      return text.slice(0,cut).trim()+"\n"+text.slice(cut).trim();
-    }
+  const candidates=[", ","지만 ","는데 ","반면 ","그리고 ","다만 ","때문에 ","이라면 ","하면 ","라면 ","면서 ","며 "];
+  let best=-1;
+  for(const token of candidates){
+    const pos=text.lastIndexOf(token,maxChars);
+    if(pos>=42) best=Math.max(best,pos+token.length);
   }
-  return text;
+  if(best<42) return [text];
+
+  return [text.slice(0,best).trim(),text.slice(best).trim()].filter(Boolean);
+}
+
+function sentenceList(paragraph){
+  const matches=String(paragraph||"").match(/[^.!?。！？]+(?:[.!?。！？]+|$)/g)||[];
+  return matches.map(v=>v.trim()).filter(Boolean);
 }
 
 function formatMobileText(value){
   const clean=sanitizeVisibleText(value);
   if(!clean) return "";
 
-  return clean
-    .split(/\n{2,}/)
-    .map(paragraph=>paragraph
-      .split(/\n/)
-      .map(v=>v.trim())
-      .filter(Boolean)
-      .map(line=>splitLongKoreanLine(line,64))
-      .join("\n")
-    )
-    .filter(Boolean)
-    .join("\n\n")
-    .replace(/\n{3,}/g,"\n\n")
-    .trim();
+  const out=[];
+  for(const rawParagraph of clean.split(/\n{2,}/)){
+    const sentences=sentenceList(rawParagraph.replace(/\n+/g," "));
+    if(!sentences.length) continue;
+
+    let bucket=[];
+    for(const sentence of sentences){
+      const parts=splitSentenceNaturally(sentence,88);
+      for(const part of parts){
+        bucket.push(part);
+        if(bucket.length===2){
+          out.push(bucket.join(" "));
+          bucket=[];
+        }
+      }
+    }
+    if(bucket.length) out.push(bucket.join(" "));
+  }
+
+  return out.join("\n\n").replace(/\n{3,}/g,"\n\n").trim();
 }
 
 export default async function handler(req,res){

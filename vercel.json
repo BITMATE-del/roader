@@ -3,10 +3,21 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/telegram.mjs": { "maxDuration": 10 },
-    "api/setup.mjs": { "maxDuration": 10 }
+    "api/telegram.mjs": {
+      "maxDuration": 10
+    },
+    "api/setup.mjs": {
+      "maxDuration": 10
+    }
   },
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/r/:code",
+      "destination": "/api/referral?code=:code"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ]
 }

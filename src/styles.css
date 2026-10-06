@@ -119,3 +119,6 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 .settings-telegram-actions .primary{white-space:nowrap}
 .settings-help{margin-top:12px;padding:11px 13px;border:1px solid #e5e9f0;border-radius:9px;background:#f8fafc;color:#7a8697;font-size:10px;line-height:1.55}
 @media(max-width:720px){.settings-telegram-row{align-items:flex-start!important;flex-direction:column}.settings-telegram-actions{margin-left:0;width:100%;justify-content:space-between}}
+
+.referral-box{margin-top:10px;padding:9px 10px;border:1px solid #e3e8f0;border-radius:9px;background:#f8fafc;display:flex;align-items:center;gap:8px}.referral-box>div{min-width:0;flex:1}.referral-box b{display:block;font-size:11px;color:#4e5c70;margin-bottom:3px}.referral-box span{display:block;font-size:11px;color:#637086;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.referral-box .ghost{height:32px;padding:0 9px;font-size:11px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}.referral-open{color:inherit}
+@media(max-width:760px){.referral-box{align-items:stretch;flex-wrap:wrap}.referral-box>div{flex-basis:100%}.referral-box .ghost{justify-content:center;flex:1}}

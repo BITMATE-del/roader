@@ -104,6 +104,14 @@ export async function ensureSchema() {
       bot_entries integer not null default 0,
       applications integer not null default 0
     )`,
+    `create table if not exists roader_referral_clicks (
+      id bigserial primary key,
+      account_id bigint references roader_accounts(id) on delete set null,
+      source_code text not null,
+      referrer text,
+      user_agent text,
+      created_at timestamptz not null default now()
+    )`,
     `create table if not exists roader_leads (
       id bigserial primary key,
       telegram_user_id text not null,

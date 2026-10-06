@@ -4,7 +4,7 @@ import {
   BarChart3, Send, Settings, Plus, Eye, UserRound, MousePointerClick, ClipboardCheck,
   MoreHorizontal, CheckCircle2, AlertTriangle, Image as ImageIcon, FileText,
   MessageCircle, Newspaper, Heart, UploadCloud, WandSparkles, ShieldCheck, XCircle,
-  Search, ChevronDown, Save, RefreshCw, Database, Loader2, BrainCircuit
+  Search, ChevronDown, Save, RefreshCw, Database, Loader2, BrainCircuit, Copy, ExternalLink
 } from "lucide-react";
 import { scorePost, qualityLabel } from "./lib/quality";
 
@@ -272,7 +272,21 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
   const [q,setQ]=useState("");
   const [connecting,setConnecting]=useState(null);
   const [message,setMessage]=useState("");
+  const [copied,setCopied]=useState(null);
   const filtered=accounts.filter(a=>[a.name,a.handle,a.sector,a.persona].join(" ").toLowerCase().includes(q.toLowerCase()));
+
+  async function copyReferral(account){
+    const code=account.telegram_source_code;
+    if(!code) return;
+    const url=`${window.location.origin}/r/${code}`;
+    try{
+      await navigator.clipboard.writeText(url);
+      setCopied(account.id);
+      setTimeout(()=>setCopied(null),1600);
+    }catch{
+      window.prompt("프로필 유입 링크를 복사해주세요.",url);
+    }
+  }
 
   async function connectThreads(accountId){
     setConnecting(accountId);setMessage("");
@@ -305,7 +319,12 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
       :<div className="account-list">{filtered.map(a=><div className="account-list-card" key={a.id}>
         <div className="avatar xl">{String(a.name||"?").slice(0,1)}</div>
         <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span>{a.threads_user_id?<span className="badge green">Threads 연결됨</span>:<span className="badge gray">Threads 미연결</span>}</div>
-        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>{a.daily_post_goal?`하루 ${a.daily_post_goal}개`:"게시 목표 미설정"}</span><span>{a.cta_ratio!=null&&Number(a.cta_ratio)>0?`CTA ${a.cta_ratio}%`:"CTA 미설정"}</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div></div>
+        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>{a.daily_post_goal?`하루 ${a.daily_post_goal}개`:"게시 목표 미설정"}</span><span>{a.cta_ratio!=null&&Number(a.cta_ratio)>0?`CTA ${a.cta_ratio}%`:"CTA 미설정"}</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div>
+        {a.telegram_source_code&&<div className="referral-box">
+          <div><b>프로필 유입 링크</b><span>{`${window.location.origin}/r/${a.telegram_source_code}`}</span></div>
+          <button className="ghost referral-copy" onClick={()=>copyReferral(a)}><Copy size={14}/>{copied===a.id?"복사됨":"복사"}</button>
+          <a className="ghost referral-open" href={`/r/${a.telegram_source_code}`} target="_blank" rel="noreferrer"><ExternalLink size={14}/>열기</a>
+        </div>}</div>
         <div className="account-actions">
           <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
             {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}

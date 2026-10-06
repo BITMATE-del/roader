@@ -28,9 +28,9 @@ export default async function handler(req, res) {
         const handleSlug = handle
           .replace(/^@+/, "")
           .toLowerCase()
-          .replace(/[^a-z0-9._-]+/g, "_")
+          .replace(/[^a-z0-9_-]+/g, "_")
           .replace(/^_+|_+$/g, "") || "threads";
-        const sourceCode = `threads_${handleSlug}_${account.id}`;
+        const sourceCode = (`threads_${handleSlug}_${account.id}`).slice(0,64);
         const updated = await sql(
           "update roader_accounts set telegram_source_code=$1, updated_at=now() where id=$2 returning *",
           [sourceCode, account.id]

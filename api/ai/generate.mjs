@@ -50,8 +50,13 @@ function splitSentenceNaturally(sentence,maxChars=76){
 }
 
 function sentenceList(paragraph){
-  const matches=String(paragraph||"").match(/[^.!?。！？]+(?:[.!?。！？]+|$)/g)||[];
-  return matches.map(v=>v.trim()).filter(Boolean);
+  const src=String(paragraph||"");
+  const DECIMAL_TOKEN="__DECIMAL_POINT__";
+  const protectedText=src.replace(/(\d)\.(\d)/g,`$1${DECIMAL_TOKEN}$2`);
+  const matches=protectedText.match(/[^.!?。！？]+(?:[.!?。！？]+|$)/g)||[];
+  return matches
+    .map(v=>v.replaceAll(DECIMAL_TOKEN,".").trim())
+    .filter(Boolean);
 }
 
 function formatMobileText(value){
@@ -216,7 +221,7 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
       timestamp_ms:live.timestamp
     },
     technical_analysis:technical||null,
-    correction_rule:"현재가·당일 고가·당일 저가·등락률은 위 UPBIT 실시간 값만 사용한다. RSI·EMA·지지·저항은 technical_analysis가 있을 때만 사용하고 임의로 만들지 않는다. 웹검색의 오래된 가격 숫자는 현재가처럼 쓰지 않는다."
+    correction_rule:"모든 가격 숫자와 가격 구간은 KRW로만 쓴다. 현재가·당일 고가·당일 저가·등락률은 위 UPBIT 실시간 값만 사용한다. RSI·EMA·지지·저항은 technical_analysis가 있을 때만 사용하고 임의로 만들지 않는다. 웹검색은 이슈 확인용으로만 사용하고, 웹검색에서 본 달러·USDT 가격 숫자는 본문 가격 기준으로 쓰지 않는다."
   };
 
   const r=await fetch("https://api.openai.com/v1/responses",{
@@ -228,7 +233,7 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
     body:JSON.stringify({
       model,
       reasoning:{effort:"low"},
-      instructions:instructions+"\n코인 가격 숫자는 입력된 authoritative_live_market_data를 최우선으로 사용한다. 현재가를 임의로 추정하거나 웹검색 값으로 덮어쓰지 않는다.",
+      instructions:instructions+"\n코인 가격 숫자는 입력된 authoritative_live_market_data와 technical_analysis의 KRW 값만 사용한다. 현재가·지지·저항·가격 구간에 달러/USDT 숫자를 쓰지 않는다. 웹검색은 이슈 확인에만 사용하고 가격 숫자는 웹검색 값으로 덮어쓰지 않는다.",
       input:JSON.stringify(correctionContext),
       tools:[{type:"web_search",search_context_size:"medium"}],
       tool_choice:"auto",
@@ -457,7 +462,8 @@ export default async function handler(req,res){
         "비트코인을 습관적으로 첫 소재로 선택하지 않는다. 최근 24~72시간 코인 시장에서 실제로 관심이 증가한 종목·테마 후보를 여러 개 찾고, 가격과 전망을 설명할 가치가 높은 소재를 고른다.",
         "후보는 알트코인, L1/L2, AI·DePIN·RWA·게임·밈·DEX·스테이블코인·디파이·프라이버시·인프라 등 현재 시장에서 실제로 움직이는 영역을 폭넓게 본다.",
         "본문에는 가능하면 검색으로 확인한 최신 현재가 또는 최근 거래 가격대를 자연스럽게 포함한다. 가격 숫자는 반드시 최신 공개 시장 정보로 확인된 값만 쓰고 임의로 만들지 않는다.",
-        "코인 가격은 한국 독자 기준으로 반드시 원화(KRW) 중심으로 표기한다. 달러·USDT 가격만 확인되는 경우 최신 환율을 검색해 원화로 환산하고, 필요하면 괄호 안에 달러 가격을 보조로 짧게 붙인다.",
+        "코인 가격은 한국 독자 기준으로 반드시 원화(KRW)로만 표기한다. 본문에 달러·USDT 가격 숫자를 노출하지 않는다.",
+        "웹검색에서 달러 가격이 보이더라도 가격·지지·저항·과거 가격 구간에는 사용하지 않는다. 업비트 KRW 실시간 ticker와 KRW 캔들 데이터를 가격 기준으로 사용한다.",
         "환산 가격은 과도한 소수점 대신 한국 투자자가 읽기 쉬운 단위로 반올림한다. 예: 3,420원, 12만 8천원, 1억 2,300만원.",
         "단순히 '올랐다/내렸다'에서 끝내지 말고 최근 며칠 또는 최근 구간에서 가격이 어떻게 움직였는지 짧게 설명한다.",
         "해당 코인이나 섹터에 최근 24~72시간 내 가격에 영향을 줄 만한 핵심 이슈가 있으면 반드시 확인한다. 상장, 네트워크 업그레이드, 파트너십, 규제, ETF, 토큰 언락, 공급 변화, 온체인 흐름, 거래소 이슈, 개발 일정, 보안 사고 등을 포함한다.",

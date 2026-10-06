@@ -22,7 +22,21 @@ export default async function handler(req, res) {
         "insert into roader_accounts (name,handle,sector,target_audience,tone,persona,daily_post_goal,cta_ratio,telegram_source_code) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *",
         [name, handle, String(body.sector || ""), String(body.target_audience || ""), String(body.tone || ""), String(body.persona || ""), Number(body.daily_post_goal || 0), Number(body.cta_ratio || 0), String(body.telegram_source_code || "")]
       );
-      const account = rows[0];
+      let account = rows[0];
+
+      if (!account.telegram_source_code) {
+        const handleSlug = handle
+          .replace(/^@+/, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]+/g, "_")
+          .replace(/^_+|_+$/g, "") || "threads";
+        const sourceCode = `threads_${handleSlug}_${account.id}`;
+        const updated = await sql(
+          "update roader_accounts set telegram_source_code=$1, updated_at=now() where id=$2 returning *",
+          [sourceCode, account.id]
+        );
+        account = updated[0];
+      }
 
       await sql(
         "insert into roader_content_profiles (account_id) values ($1) on conflict (account_id) do nothing",

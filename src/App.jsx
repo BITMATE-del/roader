@@ -83,10 +83,21 @@ function StatusBadge({children}){
 
 function AccountModal({open,onClose,onSaved}){
   const [form,setForm]=useState(initialAccountForm);
+  const [sectorPreset,setSectorPreset]=useState("");
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState("");
 
-  useEffect(()=>{ if(open){ setForm(initialAccountForm); setError(""); } },[open]);
+  const sectorOptions=["주식 · 경제","국내주식","미국주식","코인","거시경제"];
+  const toneOptions=["차분함 · 신뢰감","쉽고 친근함","데이터 중심","직설적 · 간결함"];
+  const goalOptions=[2,4,6];
+
+  useEffect(()=>{
+    if(open){
+      setForm(initialAccountForm);
+      setSectorPreset("");
+      setError("");
+    }
+  },[open]);
   if(!open) return null;
 
   const set=(key,value)=>setForm(v=>({...v,[key]:value}));
@@ -97,34 +108,95 @@ function AccountModal({open,onClose,onSaved}){
       return;
     }
     setSaving(true); setError("");
+    let account=null;
     try{
-      await api("/api/accounts",{method:"POST",body:JSON.stringify(form)});
+      const saved=await api("/api/accounts",{method:"POST",body:JSON.stringify(form)});
+      account=saved.account;
       await onSaved();
-      onClose();
+
+      try{
+        const oauth=await api(`/api/threads/connect?state=account_${account.id}`);
+        if(!oauth.url) throw new Error("missing_oauth_url");
+        window.location.href=oauth.url;
+        return;
+      }catch{
+        setError("계정은 저장됐지만 Threads 연결을 시작하지 못했습니다. 계정 관리에서 다시 연결할 수 있습니다.");
+      }
     }catch(e){
       setError(e.message==="handle_exists"?"이미 등록된 핸들입니다.":"계정 저장에 실패했습니다.");
-    }finally{setSaving(false);}
+    }finally{
+      setSaving(false);
+    }
+  }
+
+  function chooseSector(value){
+    setSectorPreset(value);
+    if(value!=="직접입력") set("sector",value);
+    else set("sector","");
   }
 
   return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
-    <div className="modal-card">
-      <SectionTitle title="Threads 계정 추가"/>
+    <div className="modal-card quick-account-modal">
+      <div className="modal-heading">
+        <div><h2>Threads 계정 빠른 등록</h2><p>기본 운영정보만 설정하면 저장 후 바로 Threads 연결로 이동합니다.</p></div>
+      </div>
+
       <div className="form-grid">
         <div><label>계정명 *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="계정 표시 이름"/></div>
         <div><label>Threads 핸들 *</label><input value={form.handle} onChange={e=>set("handle",e.target.value)} placeholder="@username"/></div>
-        <div><label>섹터</label><input value={form.sector} onChange={e=>set("sector",e.target.value)} placeholder="운영 섹터 입력"/></div>
-        <div><label>타깃</label><input value={form.target_audience} onChange={e=>set("target_audience",e.target.value)} placeholder="주요 타깃 입력"/></div>
-        <div><label>기본 톤</label><input value={form.tone} onChange={e=>set("tone",e.target.value)} placeholder="기본 말투와 톤 입력"/></div>
-        <div><label>하루 게시 목표</label><input type="number" min="0" max="30" value={form.daily_post_goal} onChange={e=>set("daily_post_goal",e.target.value===""?"":Number(e.target.value))} placeholder="미설정"/></div>
       </div>
-      <label>계정 페르소나 / 작성 규칙</label>
-      <textarea rows="4" value={form.persona} onChange={e=>set("persona",e.target.value)} placeholder="이 계정이 어떤 관점과 말투로 글을 써야 하는지 적어주세요."/>
+
       <div className="form-grid">
-        <div><label>CTA 비율 (%)</label><input type="number" min="0" max="100" value={form.cta_ratio} onChange={e=>set("cta_ratio",e.target.value===""?"":Number(e.target.value))} placeholder="미설정"/></div>
-        <div><label>Telegram 유입코드</label><input value={form.telegram_source_code} onChange={e=>set("telegram_source_code",e.target.value)} placeholder="Telegram 유입코드 입력"/></div>
+        <div>
+          <label>섹터</label>
+          <select value={sectorPreset} onChange={e=>chooseSector(e.target.value)}>
+            <option value="">선택</option>
+            {sectorOptions.map(v=><option key={v} value={v}>{v}</option>)}
+            <option value="직접입력">직접 입력</option>
+          </select>
+          {sectorPreset==="직접입력"&&<input className="sub-input" value={form.sector} onChange={e=>set("sector",e.target.value)} placeholder="운영 섹터 입력"/>}
+        </div>
+        <div><label>주요 타깃</label><input value={form.target_audience} onChange={e=>set("target_audience",e.target.value)} placeholder="이 계정이 주로 보여질 대상"/></div>
       </div>
+
+      <label>기본 톤</label>
+      <div className="quick-buttons">
+        {toneOptions.map(v=><button key={v} className={form.tone===v?"choice active":"choice"} onClick={()=>set("tone",form.tone===v?"":v)}>{v}</button>)}
+      </div>
+
+      <div className="form-grid compact-fields">
+        <div>
+          <label>하루 게시 목표</label>
+          <div className="quick-buttons">
+            {goalOptions.map(v=><button key={v} className={Number(form.daily_post_goal)===v?"choice active":"choice"} onClick={()=>set("daily_post_goal",v)}>하루 {v}개</button>)}
+            <input className="mini-number" type="number" min="0" max="30" value={form.daily_post_goal} onChange={e=>set("daily_post_goal",e.target.value===""?"":Number(e.target.value))} placeholder="직접"/>
+          </div>
+        </div>
+        <div>
+          <label>CTA 비율 <span className="field-value">{form.cta_ratio===""?"미설정":`${form.cta_ratio}%`}</span></label>
+          <div className="range-row">
+            <span>0%</span>
+            <input type="range" min="0" max="100" step="5" value={form.cta_ratio===""?0:form.cta_ratio} onChange={e=>set("cta_ratio",Number(e.target.value))}/>
+            <span>100%</span>
+          </div>
+        </div>
+      </div>
+
+      <label>계정 페르소나 / 작성 규칙</label>
+      <textarea rows="4" value={form.persona} onChange={e=>set("persona",e.target.value)} placeholder="어떤 관점과 말투로 글을 작성할지 입력하세요."/>
+
+      <div className="auto-note">
+        <b>Telegram 유입코드</b>
+        <span>직접 입력하지 않아도 됩니다. 계정 저장 시 Threads 핸들과 계정 ID를 기준으로 자동 생성됩니다.</span>
+      </div>
+
       {error&&<div className="form-error">{error}</div>}
-      <div className="modal-actions"><button className="ghost" onClick={onClose}>취소</button><button className="primary" onClick={save} disabled={saving}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 저장</button></div>
+      <div className="modal-actions">
+        <button className="ghost" onClick={onClose}>취소</button>
+        <button className="primary" onClick={save} disabled={saving}>
+          {saving?<Loader2 className="spin" size={16}/>:<Send size={16}/>} 저장 후 Threads 연결
+        </button>
+      </div>
     </div>
   </div>;
 }

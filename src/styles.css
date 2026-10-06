@@ -53,3 +53,23 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 
 .account-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
 .account-actions button{white-space:nowrap}
+
+.quick-account-modal{width:min(760px,100%)}
+.modal-heading{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
+.modal-heading h2{margin:0;font-size:20px;color:#1f2a3d}
+.modal-heading p{margin:6px 0 0;font-size:12px;color:#7a879a;line-height:1.5}
+.modal-card select{width:100%;border:1px solid #dce3ed;border-radius:8px;padding:10px;background:#fff;outline:0;color:#26344a}
+.sub-input{margin-top:8px}
+.quick-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.choice{border:1px solid #dbe2ec;background:#fff;color:#4a5870;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:600;cursor:pointer}
+.choice:hover{border-color:#b8c3ff;color:#4353d9}
+.choice.active{background:#eef0ff;border-color:#7b85ff;color:#3948d4}
+.compact-fields{align-items:end;margin-top:2px}
+.mini-number{width:82px!important;padding:8px 9px!important}
+.field-value{float:right;color:#5363e8;font-weight:700}
+.range-row{display:grid;grid-template-columns:32px 1fr 38px;gap:8px;align-items:center;min-height:38px;font-size:10px;color:#8793a6}
+.range-row input[type="range"]{padding:0;border:0}
+.auto-note{display:flex;gap:14px;align-items:flex-start;margin-top:14px;padding:11px 12px;border:1px solid #e4e9f1;border-radius:9px;background:#f8f9fc}
+.auto-note b{font-size:11px;color:#43516a;white-space:nowrap}
+.auto-note span{font-size:11px;color:#7d899b;line-height:1.5}
+@media(max-width:760px){.quick-buttons{gap:6px}.choice{padding:8px 10px}.auto-note{display:block}.auto-note span{display:block;margin-top:4px}}

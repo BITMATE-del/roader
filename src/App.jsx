@@ -512,7 +512,12 @@ function Writer({accounts,posts,onSaved}){
   const [messageType,setMessageType]=useState("success");
 
   useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
-  const quality=useMemo(()=>scorePost({text,mediaMode,hasImage:!!image,recentTexts:posts.map(p=>p.body)}),[text,mediaMode,image,posts]);
+  const quality=useMemo(()=>scorePost({
+    text,
+    mediaMode,
+    hasImage:!!image,
+    recentTexts:posts.filter(p=>p.status==="published").map(p=>p.body)
+  }),[text,mediaMode,image,posts]);
   const selected=accounts.find(a=>String(a.id)===account);
   const connected=!!selected?.threads_user_id;
 

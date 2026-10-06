@@ -27,19 +27,26 @@ function sanitizeVisibleText(value){
     .trim();
 }
 
-function splitSentenceNaturally(sentence,maxChars=88){
+function splitSentenceNaturally(sentence,maxChars=76){
   const text=String(sentence||"").trim();
   if(!text||text.length<=maxChars) return [text];
 
-  const candidates=[", ","지만 ","는데 ","반면 ","그리고 ","다만 ","때문에 ","이라면 ","하면 ","라면 ","면서 ","며 "];
+  const candidates=[
+    ", ","다만 ","반대로 ","반면 ","특히 ","때문에 ","그래서 ",
+    "하지만 ","그러나 ","이라면 ","하면 ","라면 ","면서 ","는데 ","지만 "
+  ];
+
   let best=-1;
   for(const token of candidates){
-    const pos=text.lastIndexOf(token,maxChars);
-    if(pos>=42) best=Math.max(best,pos+token.length);
+    const pos=text.lastIndexOf(token,maxChars+8);
+    if(pos>=34) best=Math.max(best,pos+token.length);
   }
-  if(best<42) return [text];
 
-  return [text.slice(0,best).trim(),text.slice(best).trim()].filter(Boolean);
+  if(best<34) return [text];
+
+  const first=text.slice(0,best).trim();
+  const second=text.slice(best).trim();
+  return [first,second].filter(Boolean);
 }
 
 function sentenceList(paragraph){
@@ -51,26 +58,28 @@ function formatMobileText(value){
   const clean=sanitizeVisibleText(value);
   if(!clean) return "";
 
-  const out=[];
+  const paragraphs=[];
+
   for(const rawParagraph of clean.split(/\n{2,}/)){
     const sentences=sentenceList(rawParagraph.replace(/\n+/g," "));
     if(!sentences.length) continue;
 
     let bucket=[];
     for(const sentence of sentences){
-      const parts=splitSentenceNaturally(sentence,88);
+      const parts=splitSentenceNaturally(sentence,76);
       for(const part of parts){
         bucket.push(part);
         if(bucket.length===2){
-          out.push(bucket.join(" "));
+          paragraphs.push(bucket.join("\n"));
           bucket=[];
         }
       }
     }
-    if(bucket.length) out.push(bucket.join(" "));
+
+    if(bucket.length) paragraphs.push(bucket.join("\n"));
   }
 
-  return out.join("\n\n").replace(/\n{3,}/g,"\n\n").trim();
+  return paragraphs.join("\n\n").replace(/\n{3,}/g,"\n\n").trim();
 }
 
 export default async function handler(req,res){
@@ -128,7 +137,8 @@ export default async function handler(req,res){
       "본문은 대체로 5~7개 문단으로 구성한다.",
       "본문 구조의 기본 골격: 오늘 시장/섹터 핵심 흐름 → 대표 종목 또는 이슈 맥락 → 단순 추격과 구분 → 제가 실제로 체크하는 조건/구간 → 이유/체크포인트 → 독자 질문.",
       "항상 같은 문구를 기계적으로 반복하지 말고 소재에 맞춰 자연스럽게 변형한다.",
-      "첫 1~2문장은 반드시 후킹 역할을 해야 한다. 설명부터 시작하지 말고 '왜 지금 봐야 하는지', '앞으로 뭐가 달라질 수 있는지', '시장이 놓치고 있는 포인트가 무엇인지' 중 하나를 먼저 던진다.",
+      "첫 문장은 반드시 짧고 강한 후킹 문장으로 쓴다. 18~36자 안쪽을 우선하고, 설명형 서두보다 '지금 이 코인을 봐야 하는 이유', '가격이 갈릴 핵심 구간', '시장이 아직 덜 반영한 변수'처럼 독자가 다음 문장을 보게 만드는 내용을 먼저 던진다.",
+      "첫 문장 다음에 바로 가격이나 전망 핵심을 연결한다. '며칠 새 올랐습니다' 같은 평범한 사실 전달로 시작하지 않는다.",
       "말투는 기사·리서치 보고서처럼 딱딱하게 쓰지 않는다. 실제 개인 투자자가 Threads에서 말하듯 쉽고 자연스럽게 쓴다.",
       "'~입니다/~합니다/~됩니다' 같은 종결어미를 연속으로 반복하지 않는다. '~죠', '~보입니다', '~볼 수 있습니다', '~가능성이 있습니다', '~체크해볼 만합니다'처럼 자연스럽게 섞는다.",
       "최근 실제 게시물의 도입부와 소재가 겹치면 다른 소재를 선택한다.",

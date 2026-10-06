@@ -107,6 +107,7 @@ export async function ensureSchema() {
     `create table if not exists roader_leads (
       id bigserial primary key,
       telegram_user_id text not null,
+      receipt_number text,
       telegram_username text,
       display_name text,
       age_group text,

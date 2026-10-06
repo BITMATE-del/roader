@@ -27,6 +27,66 @@ function sanitizeVisibleText(value){
     .trim();
 }
 
+function splitLongKoreanLine(line,maxChars=42){
+  const text=String(line||"").trim();
+  if(!text||text.length<=maxChars) return text;
+
+  const chunks=[];
+  let rest=text;
+
+  while(rest.length>maxChars){
+    const window=rest.slice(0,maxChars+10);
+    const minBreak=Math.max(20,maxChars-14);
+    const candidates=[];
+
+    for(const token of ["。",". ","? ","! ","다. ","요. ","면 ","지만 ","는데 ","고 ","며 ",", ","· "," → "," / "]){
+      let pos=window.lastIndexOf(token);
+      if(pos>=minBreak) candidates.push(pos+token.length);
+    }
+
+    let cut=candidates.length?Math.max(...candidates):-1;
+
+    if(cut<minBreak){
+      const spaces=[];
+      for(let i=minBreak;i<window.length;i++) if(window[i]===" ") spaces.push(i);
+      cut=spaces.length?spaces.reduce((best,p)=>Math.abs(p-maxChars)<Math.abs(best-maxChars)?p:best,spaces[0]):-1;
+    }
+
+    if(cut<minBreak) cut=maxChars;
+
+    chunks.push(rest.slice(0,cut).trim());
+    rest=rest.slice(cut).trim();
+  }
+
+  if(rest) chunks.push(rest);
+  return chunks.join("\n");
+}
+
+function formatMobileText(value){
+  const clean=sanitizeVisibleText(value);
+  if(!clean) return "";
+
+  return clean
+    .split(/\n{2,}/)
+    .map(paragraph=>{
+      const lines=paragraph
+        .split(/\n/)
+        .map(v=>v.trim())
+        .filter(Boolean)
+        .flatMap(line=>splitLongKoreanLine(line,42).split("\n"));
+
+      const out=[];
+      for(let i=0;i<lines.length;i+=2){
+        out.push(lines.slice(i,i+2).join("\n"));
+      }
+      return out.join("\n\n");
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+}
+
 export default async function handler(req,res){
   try{
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
@@ -78,7 +138,7 @@ export default async function handler(req,res){
       "항상 1인칭은 '제가/저는'을 사용하고 '저희'는 사용하지 않는다.",
       "수익 보장, 급등 확정, 원금 보장, 100%, 무조건 오른다 같은 표현은 금지한다.",
       "특정 종목의 상승을 확정하거나 매수를 직접 권유하지 않는다.",
-      "본문은 모바일에서 읽기 쉬워야 한다: 한 문단 1~2문장, 문단 사이 빈 줄 1개, 긴 문장은 의미 단위 줄바꿈, 질문은 별도 문단.",
+      "본문은 모바일에서 읽기 쉬워야 한다: 한 문단 1~2문장, 문단 사이 빈 줄 1개, 한 줄은 가능하면 35~42자 안쪽으로 유지하고 긴 문장은 접속어·쉼표·의미 전환 지점에서 줄바꿈한다. 질문은 별도 문단.",
       "본문은 대체로 5~7개 문단으로 구성한다.",
       "본문 구조의 기본 골격: 오늘 시장/섹터 핵심 흐름 → 대표 종목 또는 이슈 맥락 → 단순 추격과 구분 → 제가 실제로 체크하는 조건/구간 → 이유/체크포인트 → 독자 질문.",
       "항상 같은 문구를 기계적으로 반복하지 말고 소재에 맞춰 자연스럽게 변형한다.",
@@ -190,8 +250,8 @@ export default async function handler(req,res){
     return res.status(200).json({
       ok:true,
       selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
-      body:sanitizeVisibleText(parsed.body||""),
-      reply:sanitizeVisibleText(parsed.reply||""),
+      body:formatMobileText(parsed.body||""),
+      reply:formatMobileText(parsed.reply||""),
       model
     });
   }catch(error){

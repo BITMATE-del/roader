@@ -110,6 +110,7 @@ export async function ensureSchema() {
       receipt_number text,
       telegram_username text,
       display_name text,
+      phone_number text,
       age_group text,
       interest text,
       experience text,
@@ -119,6 +120,18 @@ export async function ensureSchema() {
       processed_by text,
       processed_at timestamptz,
       created_at timestamptz not null default now()
+    )`,
+    `create table if not exists roader_telegram_sessions (
+      telegram_user_id text primary key,
+      chat_id text not null,
+      stage text not null default 'idle',
+      source_code text,
+      age_group text,
+      interest text,
+      experience text,
+      applicant_name text,
+      phone_number text,
+      updated_at timestamptz not null default now()
     )`,
     `create table if not exists roader_style_sources (
       id bigserial primary key,
@@ -167,6 +180,12 @@ export async function ensureSchema() {
 
   statements.push(
     `alter table roader_leads add column if not exists receipt_number text`,
+    `create unique index if not exists idx_roader_leads_receipt_number on roader_leads(receipt_number) where receipt_number is not null`
+  );
+
+  statements.push(
+    `alter table roader_leads add column if not exists receipt_number text`,
+    `alter table roader_leads add column if not exists phone_number text`,
     `create unique index if not exists idx_roader_leads_receipt_number on roader_leads(receipt_number) where receipt_number is not null`
   );
 

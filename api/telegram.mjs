@@ -145,6 +145,29 @@ async function makeReceipt(sql) {
   return prettyReceipt(fallback);
 }
 
+
+function normalizePhone(value){
+  const digits=String(value||"").replace(/\D/g,"");
+  if(digits.length===11) return digits.slice(0,3)+"-"+digits.slice(3,7)+"-"+digits.slice(7);
+  if(digits.length===10) return digits.slice(0,3)+"-"+digits.slice(3,6)+"-"+digits.slice(6);
+  return "";
+}
+
+async function saveSession(sql,userId,chatId,patch){
+  const current=await sql("select * from roader_telegram_sessions where telegram_user_id=$1",[String(userId)]);
+  const c=current[0]||{};
+  const n={...c,...patch};
+  await sql(
+    "insert into roader_telegram_sessions (telegram_user_id,chat_id,stage,source_code,age_group,interest,experience,applicant_name,phone_number,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now()) on conflict (telegram_user_id) do update set chat_id=excluded.chat_id,stage=excluded.stage,source_code=excluded.source_code,age_group=excluded.age_group,interest=excluded.interest,experience=excluded.experience,applicant_name=excluded.applicant_name,phone_number=excluded.phone_number,updated_at=now()",
+    [String(userId),String(chatId),n.stage||"idle",n.source_code||null,n.age_group||null,n.interest||null,n.experience||null,n.applicant_name||null,n.phone_number||null]
+  );
+}
+
+async function getSession(sql,userId){
+  const rows=await sql("select * from roader_telegram_sessions where telegram_user_id=$1",[String(userId)]);
+  return rows[0]||null;
+}
+
 async function start(message) {
   const source = parseSource(message.text || "");
   const name = esc(message.from?.first_name || "회원");
@@ -152,7 +175,7 @@ async function start(message) {
   await send(
     message.chat.id,
     "🧭 <b>무료 정보 신청</b>\n\n" +
-      name + "님, 간단한 신청 정보를 확인한 뒤\n상담원이 직접 연락드려 정보방 안내를 도와드립니다.\n\n" +
+      "간단한 정보 확인 후\n정보방 안내를 도와드리겠습니다.\n\n" +
       "신청을 원하시면 아래 버튼을 눌러주세요.",
     {
       reply_markup: kb([
@@ -184,86 +207,126 @@ async function resolveSourcePost(sql,source){
   return null;
 }
 
-async function submit(query, age, interest, exp, source) {
+
+async function showConfirmation(chatId,session){
+  await send(
+    chatId,
+    "📋 <b>신청 내용을 확인해주세요.</b>\n\n"+
+    "👤 이름 : <b>"+esc(session.applicant_name)+"</b>\n"+
+    "📞 전화번호 : <b>"+esc(session.phone_number)+"</b>\n"+
+    "🎂 연령 : <b>"+esc(session.age_group)+"</b>\n"+
+    "📊 관심분야 : <b>"+esc(session.interest)+"</b>\n"+
+    "📈 투자경험 : <b>"+esc(session.experience)+"</b>\n\n"+
+    "내용이 맞으면 아래 버튼을 눌러\n상담 신청을 완료해주세요.",
+    {reply_markup:kb([[{text:"✅ 상담 신청 확인",callback_data:"confirm_apply"}]])}
+  );
+}
+
+async function finalizeApplication(query){
   await ensureSchema();
   const sql=client();
-  const user=query.from;
-  const fullName=[user.first_name,user.last_name].filter(Boolean).join(" ")||"미입력";
-  const username=user.username ? "@" + user.username : null;
+  const session=await getSession(sql,query.from.id);
+  if(!session||!session.applicant_name||!session.phone_number){
+    await answer(query.id,"신청 정보를 다시 입력해주세요.");
+    return send(query.message.chat.id,"신청 정보가 만료되었습니다. /start 를 눌러 다시 진행해주세요.");
+  }
 
   const existing=await sql(
     "select * from roader_leads where telegram_user_id=$1 and status in ('pending','contacting','hold') order by created_at desc limit 1",
-    [String(user.id)]
+    [String(query.from.id)]
   );
 
   let lead=existing[0];
-  if(lead && !lead.receipt_number){
-    const receipt=await makeReceipt(sql);
-    const rows=await sql(
-      "update roader_leads set receipt_number=$1 where id=$2 returning *",
-      [receipt,lead.id]
-    );
-    lead=rows[0];
-  }
-
   if(!lead){
     const receipt=await makeReceipt(sql);
-    const sourcePostId=await resolveSourcePost(sql,source);
+    const sourcePostId=await resolveSourcePost(sql,session.source_code);
     const rows=await sql(
-      "insert into roader_leads (telegram_user_id,receipt_number,telegram_username,display_name,age_group,interest,experience,source_code,source_post_id,status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending') returning *",
-      [
-        String(user.id),receipt,username,fullName,
-        AGE_LABELS[age]||age,INTEREST_LABELS[interest]||interest,EXP_LABELS[exp]||exp,
-        source||"direct",sourcePostId
-      ]
+      "insert into roader_leads (telegram_user_id,receipt_number,telegram_username,display_name,phone_number,age_group,interest,experience,source_code,source_post_id,status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending') returning *",
+      [String(query.from.id),receipt,query.from.username?("@"+query.from.username):null,session.applicant_name,session.phone_number,session.age_group,session.interest,session.experience,session.source_code||"direct",sourcePostId]
     );
     lead=rows[0];
+  }else{
+    const rows=await sql(
+      "update roader_leads set display_name=$1,phone_number=$2,age_group=$3,interest=$4,experience=$5 where id=$6 returning *",
+      [session.applicant_name,session.phone_number,session.age_group,session.interest,session.experience,lead.id]
+    );
+    lead=rows[0];
+    if(!lead.receipt_number){
+      const receipt=await makeReceipt(sql);
+      const rows2=await sql("update roader_leads set receipt_number=$1 where id=$2 returning *",[receipt,lead.id]);
+      lead=rows2[0];
+    }
   }
 
-  const now=new Intl.DateTimeFormat("ko-KR",{
-    timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",
-    hour:"2-digit",minute:"2-digit",hour12:false
-  }).format(new Date());
+  await saveSession(sql,query.from.id,query.message.chat.id,{...session,stage:"completed"});
+  await answer(query.id,"상담 신청이 접수되었습니다.");
 
-  // 신청자에게는 DB 저장 직후 바로 접수 완료를 보여준다.
   await edit(
     query.message.chat.id,
     query.message.message_id,
-    "✅ <b>신청이 정상적으로 접수되었습니다.</b>\n\n" +
-      "정보방 안내를 도와드릴 상담원이\n확인 후 직접 연락드릴 예정입니다.\n\n" +
-      "🔖 <b>접수번호</b>\n" +
-      "<code>" + esc(lead.receipt_number) + "</code>\n\n" +
-      "상담원에게 연락이 오면\n<b>위 접수번호를 말씀해주세요.</b>\n\n" +
-      "접수번호는 상담 확인을 위해 필요하니\n안내가 완료될 때까지 보관해주세요."
+    "✅ <b>신청이 정상적으로 접수되었습니다.</b>\n\n"+
+    "정보방 안내를 도와드릴 상담원이\n확인 후 직접 연락드릴 예정입니다.\n\n"+
+    "🔖 <b>접수번호</b>\n"+
+    "<code>"+esc(lead.receipt_number)+"</code>\n\n"+
+    "상담원에게 연락이 오면\n<b>위 접수번호를 말씀해주세요.</b>\n\n"+
+    "접수번호는 상담 확인을 위해 필요하니\n안내가 완료될 때까지 보관해주세요."
   );
 
-  // 관리자 알림 실패가 신청 접수 자체를 막지 않도록 분리한다.
+  const now=new Intl.DateTimeFormat("ko-KR",{
+    timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false
+  }).format(new Date());
+
   try{
     await send(
       ADMIN_CHAT_ID,
-      "🧭 <b>신규 상담 신청 접수</b>\n\n" +
-        "🔖 접수번호 : <b>" + esc(lead.receipt_number) + "</b>\n" +
-        "👤 이름 : <b>" + esc(fullName) + "</b>\n" +
-        "🪪 Telegram : <b>" + esc(username||"없음") + "</b>\n" +
-        "🔢 User ID : <code>" + user.id + "</code>\n" +
-        "🎂 연령 : <b>" + esc(AGE_LABELS[age]||age) + "</b>\n" +
-        "📊 관심분야 : <b>" + esc(INTEREST_LABELS[interest]||interest) + "</b>\n" +
-        "📈 투자경험 : <b>" + esc(EXP_LABELS[exp]||exp) + "</b>\n" +
-        "🔗 유입경로 : <b>" + esc(sourceLabel(source)) + "</b>\n" +
-        "🕒 신청시간 : <b>" + esc(now) + "</b>",
-      {
-        reply_markup: kb([[
-          { text: "✅ 상담 완료", callback_data: "adm|done|" + lead.id },
-          { text: "⏸ 보류", callback_data: "adm|hold|" + lead.id }
-        ]])
-      }
+      "🧭 <b>신규 상담 신청 접수</b>\n\n"+
+      "🔖 접수번호 : <b>"+esc(lead.receipt_number)+"</b>\n"+
+      "👤 이름 : <b>"+esc(session.applicant_name)+"</b>\n"+
+      "📞 전화번호 : <b>"+esc(session.phone_number)+"</b>\n"+
+      "🎂 연령 : <b>"+esc(session.age_group)+"</b>\n"+
+      "📊 관심분야 : <b>"+esc(session.interest)+"</b>\n"+
+      "📈 투자경험 : <b>"+esc(session.experience)+"</b>\n"+
+      "🔗 유입경로 : <b>"+esc(sourceLabel(session.source_code))+"</b>\n"+
+      "🕒 신청시간 : <b>"+esc(now)+"</b>",
+      {reply_markup:kb([[
+        {text:"✅ 상담 완료",callback_data:"adm|done|"+lead.id},
+        {text:"⏸ 보류",callback_data:"adm|hold|"+lead.id}
+      ]])}
     );
   }catch(adminError){
     console.error("telegram-admin-notify",adminError);
   }
 }
 
-async function callback(query) {
+async function handleText(message){
+  if(!message?.text||message.text.startsWith("/")) return;
+  await ensureSchema();
+  const sql=client();
+  const session=await getSession(sql,message.from.id);
+  if(!session) return;
+
+  const text=String(message.text||"").trim();
+
+  if(session.stage==="awaiting_name"){
+    if(text.length<2||text.length>30){
+      return send(message.chat.id,"이름을 2~30자 이내로 입력해주세요.");
+    }
+    await saveSession(sql,message.from.id,message.chat.id,{...session,stage:"awaiting_phone",applicant_name:text});
+    return send(message.chat.id,"📞 <b>연락받으실 전화번호를 입력해주세요.</b>\n\n예: 010-1234-5678");
+  }
+
+  if(session.stage==="awaiting_phone"){
+    const phone=normalizePhone(text);
+    if(!phone){
+      return send(message.chat.id,"전화번호 형식을 확인해주세요.\n예: 010-1234-5678");
+    }
+    const updated={...session,stage:"confirm",phone_number:phone};
+    await saveSession(sql,message.from.id,message.chat.id,updated);
+    return showConfirmation(message.chat.id,updated);
+  }
+}
+
+async function callback(query){
   const parts=(query.data||"").split("|");
   const action=parts[0];
 
@@ -287,19 +350,31 @@ async function callback(query) {
 
   if(action==="exp"){
     const [,exp,age,interest,source="direct"]=parts;
-    await answer(query.id,"신청서를 접수합니다.");
-    return submit(query,age,interest,exp,source);
+    await ensureSchema();
+    const sql=client();
+    await saveSession(sql,query.from.id,query.message.chat.id,{
+      stage:"awaiting_name",
+      source_code:source,
+      age_group:AGE_LABELS[age]||age,
+      interest:INTEREST_LABELS[interest]||interest,
+      experience:EXP_LABELS[exp]||exp
+    });
+    await answer(query.id);
+    await edit(query.message.chat.id,query.message.message_id,"✅ 기본 정보 확인이 완료되었습니다.\n\n이제 신청자 정보를 입력해주세요.");
+    return send(query.message.chat.id,"👤 <b>성함을 직접 입력해주세요.</b>");
+  }
+
+  if(action==="confirm_apply"){
+    return finalizeApplication(query);
   }
 
   if(action==="adm"){
     const [,decision,leadId]=parts;
-    if(!(await authorizedAdmin(query.from.id))){
-      return answer(query.id,"관리자만 처리할 수 있습니다.");
-    }
+    if(!(await isAdmin(query.from.id))) return answer(query.id,"관리자만 처리할 수 있습니다.");
 
     await ensureSchema();
     const sql=client();
-    const status=decision==="done" ? "completed" : "hold";
+    const status=decision==="done"?"completed":"hold";
     const rows=await sql(
       "update roader_leads set status=$1,processed_by=$2,processed_at=now() where id=$3 returning *",
       [status,String(query.from.username||query.from.first_name||query.from.id),Number(leadId)]
@@ -307,14 +382,12 @@ async function callback(query) {
     const lead=rows[0];
     if(!lead) return answer(query.id,"신청내역을 찾지 못했습니다.");
 
-    const resultText=decision==="done" ? "✅ 상담 완료" : "⏸ 보류";
+    const resultText=decision==="done"?"✅ 상담 완료":"⏸ 보류";
     await answer(query.id,resultText);
     return edit(
       query.message.chat.id,
       query.message.message_id,
-      esc(query.message.text||"신청서") +
-        "\n\n<b>처리결과 : " + resultText + "</b>\n" +
-        "처리자 : " + esc(query.from.first_name||String(query.from.id))
+      esc(query.message.text||"신청서")+"\n\n<b>처리결과 : "+resultText+"</b>\n처리자 : "+esc(query.from.first_name||String(query.from.id))
     );
   }
 

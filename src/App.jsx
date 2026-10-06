@@ -725,8 +725,8 @@ function Analytics({data,onRefresh}){
 
 function Leads({leads,onRefresh}){
   return <><div className="hero-row"><div><h1>텔레그램 신청 관리</h1><p>Telegram 신청봇에서 저장된 실제 신청자만 표시합니다.</p></div><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button></div>
-    <div className="panel">{leads.length===0?<EmptyState title="아직 접수된 신청이 없습니다." desc="Telegram 신청봇에서 접수된 실제 신청자가 여기에 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>접수번호</th><th>신청일</th><th>이름</th><th>Telegram</th><th>연령</th><th>관심분야</th><th>경험</th><th>유입코드</th><th>상태</th></tr></thead><tbody>
-      {leads.map(l=><tr key={l.id}><td><b>{l.receipt_number||"-"}</b></td><td>{fmtDate(l.created_at)}</td><td>{l.display_name||"-"}</td><td>{l.telegram_username||l.telegram_user_id}</td><td>{l.age_group||"-"}</td><td>{l.interest||"-"}</td><td>{l.experience||"-"}</td><td>{l.source_code||"-"}</td><td><StatusBadge>{l.status}</StatusBadge></td></tr>)}
+    <div className="panel">{leads.length===0?<EmptyState title="아직 접수된 신청이 없습니다." desc="Telegram 신청봇에서 접수된 실제 신청자가 여기에 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>접수번호</th><th>신청일</th><th>이름</th><th>전화번호</th><th>연령</th><th>관심분야</th><th>경험</th><th>유입코드</th><th>상태</th></tr></thead><tbody>
+      {leads.map(l=><tr key={l.id}><td><b>{l.receipt_number||"-"}</b></td><td>{fmtDate(l.created_at)}</td><td>{l.display_name||"-"}</td><td>{l.phone_number||"-"}</td><td>{l.age_group||"-"}</td><td>{l.interest||"-"}</td><td>{l.experience||"-"}</td><td>{l.source_code||"-"}</td><td><StatusBadge>{l.status}</StatusBadge></td></tr>)}
     </tbody></table></div>}</div>
   </>;
 }

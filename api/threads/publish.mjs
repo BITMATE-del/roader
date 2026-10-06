@@ -31,6 +31,7 @@ export default async function handler(req,res){
       [accountId]
     );
     const account=accounts[0];
+
     if(!account?.threads_user_id||!account?.threads_access_token_encrypted){
       return res.status(400).json({ok:false,error:"threads_account_not_connected"});
     }
@@ -51,26 +52,24 @@ export default async function handler(req,res){
     postId=inserted[0]?.id||null;
 
     const token=String(account.threads_access_token_encrypted);
-    const userId=String(account.threads_user_id);
 
-    const create=await graphPost(
-      `https://graph.threads.net/v1.0/${encodeURIComponent(userId)}/threads`,
-      {media_type:"TEXT",text,access_token:token}
-    );
-    if(!create.response.ok||!create.data?.id){
-      if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-      console.error("threads-create",create.data);
-      return res.status(502).json({ok:false,error:"threads_create_failed",details:create.data?.error?.message||create.data?.error_message||null});
-    }
-
+    // Threads supports direct publishing for text posts with auto_publish_text=true.
     const publish=await graphPost(
-      `https://graph.threads.net/v1.0/${encodeURIComponent(userId)}/threads_publish`,
-      {creation_id:String(create.data.id),access_token:token}
+      "https://graph.threads.net/v1.0/me/threads",
+      {
+        media_type:"TEXT",
+        text,
+        auto_publish_text:"true",
+        access_token:token
+      }
     );
+
     if(!publish.response.ok||!publish.data?.id){
       if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-      console.error("threads-publish",publish.data);
-      return res.status(502).json({ok:false,error:"threads_publish_failed",details:publish.data?.error?.message||publish.data?.error_message||null});
+      const details=publish.data?.error?.message||publish.data?.error_message||publish.data?.message||null;
+      const code=publish.data?.error?.code||publish.data?.error_code||null;
+      console.error("threads-auto-publish",publish.data);
+      return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
     }
 
     const threadsPostId=String(publish.data.id);
@@ -90,6 +89,6 @@ export default async function handler(req,res){
         await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
       }
     }catch{}
-    return res.status(500).json({ok:false,error:"server_error"});
+    return res.status(500).json({ok:false,error:"server_error",details:String(error?.message||"")});
   }
 }

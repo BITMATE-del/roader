@@ -51,7 +51,12 @@ async function api(path, options={}){
     ...options
   });
   const data = await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(data.error || "request_failed");
+  if(!res.ok){
+    const error=new Error(data.error || "request_failed");
+    error.details=data.details || "";
+    error.code=data.code || "";
+    throw error;
+  }
   return data;
 }
 
@@ -568,7 +573,8 @@ function Writer({accounts,posts,onSaved}){
         threads_publish_failed:"Threads 게시 최종 발행에 실패했습니다.",
         text_only_for_now:"현재는 텍스트 게시만 지원합니다."
       };
-      setMessage(map[e.message]||`Threads 게시 실패 · ${e.message||"server_error"}`);
+      const base=map[e.message]||`Threads 게시 실패 · ${e.message||"server_error"}`;
+      setMessage(e.details?`${base} · Meta: ${e.details}`:base);
     }finally{setPublishing(false);}
   }
 

@@ -86,7 +86,7 @@ async function fetchPublicPosts(username, token){
     limit:"50",
     access_token:token
   });
-  const response = await fetch("https://graph.threads.net/v1.0/profile_posts?"+params.toString());
+  const response = await fetch("https://graph.threads.net/profile_posts?"+params.toString());
   const data = await response.json().catch(()=>({}));
   if(!response.ok){
     const message=data?.error?.message||"threads_api_error";
@@ -212,11 +212,10 @@ export default async function handler(req,res){
       const permission=
         lower.includes("permission") ||
         lower.includes("not authorized") ||
-        Number(error?.code)===10 ||
-        Number(error?.code)===200;
+        lower.includes("insufficient scope");
 
       const readable=permission
-        ?"공개 프로필 수집 권한이 없습니다. 계정 관리에서 Threads 다시 연결 후 threads_profile_discovery 권한을 승인해주세요."
+        ?"공개 프로필 수집 권한 오류 · "+rawMessage
         :rawMessage;
 
       await sql(
@@ -228,7 +227,8 @@ export default async function handler(req,res){
         ok:false,
         error:permission?"threads_profile_discovery_required":"threads_fetch_failed",
         message:readable,
-        code:error?.code||null
+        code:error?.code||null,
+        meta_message:rawMessage
       });
     }
   }catch(error){

@@ -535,7 +535,7 @@ function Writer({accounts,posts,onSaved}){
       })});
       setText(result.body||"");
       setReplyText(result.reply||"");
-      setMessage(`AI 초안 생성 완료 · ${result.model||"AI"}`);
+      setMessage(`AI 자동 소재 선정 + 초안 생성 완료${result.selected_topic?` · ${result.selected_topic}`:""}`);
     }catch(e){
       setMessageType("error");
       const map={
@@ -626,13 +626,16 @@ function Writer({accounts,posts,onSaved}){
         <label>계정 선택</label><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
         <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span><small>{connected?"Threads 연결됨 · 실제 게시 가능":"Threads 미연결 · 계정 관리에서 먼저 연결 필요"}</small>{selected?.style_sample_count>0&&<small>학습 스타일 {selected.style_confidence}% · 샘플 {selected.style_sample_count}개 · {(selected.learned_style?.style_tags||[]).join(" · ")}</small>}</div>
         <div className="ai-generate-box">
-          <div className="ai-generate-head"><div><b>AI 자동 작성</b><span>주제나 핵심 포인트만 입력하면 본문과 1차 댓글을 같이 작성합니다.</span></div><Sparkles size={18}/></div>
-          <textarea rows="3" value={aiTopic} onChange={e=>setAiTopic(e.target.value)} placeholder="예: 오늘 반도체 흐름 / 삼성전자·SK하이닉스 / 이미 오른 종목보다 본격 상승 전 구간에 있는 종목을 보는 관점"/>
-          <button className="ai-generate-btn" onClick={generateWithAI} disabled={generating||!account}>
+          <div className="ai-generate-head"><div><b>AI 자동 소재 발굴 + 작성</b><span>계정 페르소나와 섹터를 기준으로 오늘 쓸 소재부터 자동으로 찾습니다.</span></div><Sparkles size={18}/></div>
+          <button className="ai-generate-btn primary-auto" onClick={generateWithAI} disabled={generating||!account}>
             {generating?<Loader2 className="spin" size={16}/>:<WandSparkles size={16}/>}
-            {generating?"AI가 작성 중...":"AI 본문 + 댓글 생성"}
+            {generating?"최신 시장을 검색하고 작성 중...":"오늘 게시물 자동 생성"}
           </button>
-          <small>구체적인 현재 시장 사실을 넣을수록 정확합니다. 입력이 비어 있으면 계정 섹터와 페르소나를 기준으로 과장 없이 작성합니다.</small>
+          <details className="ai-topic-override">
+            <summary>특정 주제를 직접 지정하고 싶을 때만 입력</summary>
+            <textarea rows="3" value={aiTopic} onChange={e=>setAiTopic(e.target.value)} placeholder="선택 입력 · 비워두면 AI가 최신 시장에서 자동으로 소재를 선정합니다."/>
+          </details>
+          <small>기본값은 완전 자동입니다. 최신 공개 정보를 검색한 뒤 최근 실제 게시물과 겹치지 않는 소재를 골라 본문과 1차 댓글을 함께 작성합니다.</small>
         </div>
         <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>

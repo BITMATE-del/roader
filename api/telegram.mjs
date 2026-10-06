@@ -197,6 +197,27 @@ async function authorizedAdmin(userId) {
   }
 }
 
+
+async function isAdmin(userId){
+  const adminChatId=String(ADMIN_CHAT_ID||"");
+  if(!adminChatId) return false;
+
+  if(!adminChatId.startsWith("-")){
+    return String(userId)===adminChatId;
+  }
+
+  try{
+    const member=await tg("getChatMember",{
+      chat_id:ADMIN_CHAT_ID,
+      user_id:userId
+    });
+    return ["creator","administrator"].includes(member.status);
+  }catch(error){
+    console.error("telegram-admin-check",error);
+    return false;
+  }
+}
+
 async function resolveSourcePost(sql,source){
   if(!source || source==="direct") return null;
   const numeric=String(source).match(/post[_-]?(\d+)$/i);

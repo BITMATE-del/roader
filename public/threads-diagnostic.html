@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ROADER Threads 권한 진단</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f8fb;color:#182033;font-family:Inter,Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:780px;margin:0 auto;padding:48px 18px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.top h1{margin:0;font-size:28px}.top a{color:#475467;text-decoration:none}
+.card{background:#fff;border:1px solid #e6eaf0;border-radius:14px;padding:22px;margin-bottom:14px}.muted{color:#7c8799;font-size:13px}
+select,button{height:42px;border-radius:9px;border:1px solid #d8dee8;background:#fff;padding:0 12px;font-size:14px}select{width:100%;margin:10px 0}button{background:#4657ff;color:#fff;border:0;font-weight:700;cursor:pointer;width:100%}button:disabled{opacity:.5}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.summary div,.perm{border:1px solid #e6eaf0;border-radius:9px;padding:12px;background:#fafbfc}.summary span{display:block;font-size:11px;color:#8792a5;margin-bottom:5px}.summary b{font-size:12px;word-break:break-all}
+.perms{display:grid;gap:7px}.perm{display:flex;justify-content:space-between;align-items:center}.perm code{font-size:12px}.ok{color:#079669}.no{color:#d92d20}.message{margin-top:12px;font-size:13px;color:#667085}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.chips span{background:#f1f4f8;border-radius:6px;padding:5px 7px;font-size:11px}
+@media(max-width:620px){.summary{grid-template-columns:1fr}.top{align-items:flex-start;gap:10px;flex-direction:column}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="top"><div><h1>Threads 권한 진단</h1><div class="muted">Meta가 실제 액세스 토큰에 부여한 권한을 확인합니다.</div></div><a href="/">← ROADER로 돌아가기</a></div>
+<div class="card">
+<label><b>진단할 ROADER 계정</b></label>
+<select id="account"><option>계정 불러오는 중...</option></select>
+<button id="run">실제 토큰 권한 진단</button>
+<div id="msg" class="message"></div>
+</div>
+<div id="result" class="card" style="display:none"></div>
+</div>
+<script>
+const required=["threads_basic","threads_content_publish","threads_manage_replies","threads_manage_insights","threads_profile_discovery"];
+const account=document.getElementById("account"),run=document.getElementById("run"),msg=document.getElementById("msg"),result=document.getElementById("result");
+
+async function loadAccounts(){
+  const r=await fetch("/api/accounts");
+  const data=await r.json();
+  const rows=(data.accounts||[]).filter(a=>a.threads_user_id);
+  account.innerHTML=rows.length?rows.map(a=>'<option value="'+a.id+'">'+escapeHtml(a.name)+' ('+escapeHtml(a.threads_username||a.handle)+')</option>').join(""):'<option value="">연결된 Threads 계정 없음</option>';
+}
+function escapeHtml(v){return String(v||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
+function fmtEpoch(v){if(!v)return "-";return new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(Number(v)*1000));}
+run.onclick=async()=>{
+  if(!account.value)return;
+  run.disabled=true;msg.textContent="Meta 토큰 권한 확인 중...";result.style.display="none";
+  try{
+    const r=await fetch("/api/threads/permissions?account_id="+encodeURIComponent(account.value));
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.details||data.error||"diagnostic_failed");
+    const perms=required.map(s=>'<div class="perm"><code>'+s+'</code><b class="'+(data.required?.[s]?"ok":"no")+'">'+(data.required?.[s]?"✅ 있음":"❌ 없음")+'</b></div>').join("");
+    const all=(data.scopes||[]).map(s=>'<span>'+escapeHtml(s)+'</span>').join("")||"<span>확인된 권한 없음</span>";
+    result.innerHTML='<h2 style="margin-top:0">'+escapeHtml(data.account?.name||"")+' · '+escapeHtml(data.account?.threads_username||data.account?.handle||"")+'</h2>'+
+      '<div class="summary"><div><span>토큰 상태</span><b class="'+(data.token?.is_valid?"ok":"no")+'">'+(data.token?.is_valid?"유효":"유효하지 않음")+'</b></div><div><span>Threads User ID</span><b>'+escapeHtml(data.token?.user_id||"-")+'</b></div><div><span>만료 시각</span><b>'+fmtEpoch(data.token?.expires_at)+'</b></div></div>'+
+      '<h3>필수 권한</h3><div class="perms">'+perms+'</div><h3>실제 전체 권한</h3><div class="chips">'+all+'</div>';
+    result.style.display="block";msg.textContent="";
+  }catch(e){msg.textContent="진단 실패 · "+e.message;}
+  finally{run.disabled=false;}
+};
+loadAccounts().catch(()=>{account.innerHTML='<option value="">계정 불러오기 실패</option>';});
+</script>
+</body></html>

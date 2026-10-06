@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const rows = await sql(
-        "select a.*, coalesce(cp.min_chars,180) as min_chars, coalesce(cp.max_chars,420) as max_chars, coalesce(cp.quality_threshold,80) as quality_threshold, coalesce(cp.auto_publish_threshold,90) as auto_publish_threshold, coalesce(cp.type_mix,'{}'::jsonb) as type_mix from roader_accounts a left join roader_content_profiles cp on cp.account_id=a.id order by a.created_at asc"
+        "select a.*, coalesce(cp.min_chars,180) as min_chars, coalesce(cp.max_chars,420) as max_chars, coalesce(cp.quality_threshold,80) as quality_threshold, coalesce(cp.auto_publish_threshold,90) as auto_publish_threshold, coalesce(cp.type_mix,'{}'::jsonb) as type_mix, coalesce(sp.profile,'{}'::jsonb) as learned_style, coalesce(sp.confidence,0) as style_confidence, coalesce(sp.sample_count,0) as style_sample_count from roader_accounts a left join roader_content_profiles cp on cp.account_id=a.id left join roader_style_profiles sp on sp.account_id=a.id order by a.created_at asc"
       );
       return res.status(200).json({ ok: true, accounts: rows });
     }

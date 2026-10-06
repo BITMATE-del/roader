@@ -79,3 +79,8 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 .draft-action{width:100%}
 .publish-action{width:100%;margin:0}
 @media(max-width:760px){.publish-actions{grid-template-columns:1fr}}
+
+.quality-card.empty{background:#f8f9fc;border-color:#e1e6ef}
+.quality-card.empty .quality-head svg{color:#7c899d}
+.quality-card.empty .quality-status{color:#68768b}
+.quality-empty-guide{margin-top:14px;padding:14px;border:1px dashed #d8dfe9;border-radius:10px;background:#fff;color:#748198;font-size:12px;line-height:1.65}

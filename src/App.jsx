@@ -485,11 +485,13 @@ function StyleLearning({accounts,onRefresh}){
 }
 
 function QualityPanel({quality}){
-  const icon=quality.status==="ready"?<CheckCircle2/>:quality.status==="review"?<AlertTriangle/>:<XCircle/>;
+  const icon=quality.status==="empty"?<FileText/>:quality.status==="ready"?<CheckCircle2/>:quality.status==="review"?<AlertTriangle/>:<XCircle/>;
   return <div className={`quality-card ${quality.status}`}>
     <div className="quality-head"><div>{icon}<div><span>콘텐츠 품질 점수</span><strong>{quality.score}<small>/100</small></strong></div></div><span className="quality-status">{qualityLabel[quality.status]}</span></div>
-    <div className="quality-metrics">{Object.entries(quality.metrics).map(([k,v])=><div key={k}><span>{({hook:"훅",readability:"가독성",substance:"정보량",engagement:"반응유도",naturalness:"자연스러움",duplicate:"중복안전",visual:"시각완성도",safety:"표현안전"})[k]}</span><b>{v}</b></div>)}</div>
-    {quality.blockers.length>0&&<div className="blockers">{quality.blockers.map((b,i)=><div key={i}>• {b}</div>)}</div>}
+    {quality.status==="empty"
+      ?<div className="quality-empty-guide">본문을 작성하면 모바일 분단 · 가독성 · 정보량 · 반응유도 기준으로 실시간 검사합니다.</div>
+      :<><div className="quality-metrics">{Object.entries(quality.metrics).map(([k,v])=><div key={k}><span>{({hook:"훅",readability:"가독성",substance:"정보량",engagement:"반응유도",naturalness:"자연스러움",duplicate:"중복안전",visual:"시각완성도",safety:"표현안전"})[k]}</span><b>{v}</b></div>)}</div>
+      {quality.blockers.length>0&&<div className="blockers">{quality.blockers.map((b,i)=><div key={i}>• {b}</div>)}</div>}</>}
   </div>;
 }
 

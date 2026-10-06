@@ -39,7 +39,7 @@ export async function ensureSchema() {
       auto_publish_threshold integer not null default 90,
       banned_phrases jsonb not null default '[]'::jsonb,
       type_mix jsonb not null default '{"정보형":35,"후킹형":25,"댓글유도형":20,"뉴스해설형":15,"CTA":5}'::jsonb,
-      style_rules jsonb not null default '{}'::jsonb,
+      style_rules jsonb not null default '{"mobile_format":{"priority":"required","paragraph_max_sentences":2,"blank_line_between_paragraphs":true,"target_paragraphs":"5~7","max_line_chars":58,"split_long_sentences":true,"separate_question_or_cta":true,"instruction":"모바일에서 한눈에 읽히도록 한 문단 1~2문장, 문단 사이 빈 줄 1개, 긴 문장은 의미 단위로 줄바꿈하고 질문/CTA는 별도 문단으로 분리"}}'::jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       unique(account_id)
@@ -148,6 +148,8 @@ export async function ensureSchema() {
       updated_at timestamptz not null default now(),
       unique(account_id)
     )`,
+    `alter table roader_content_profiles alter column style_rules set default '{"mobile_format":{"priority":"required","paragraph_max_sentences":2,"blank_line_between_paragraphs":true,"target_paragraphs":"5~7","max_line_chars":58,"split_long_sentences":true,"separate_question_or_cta":true,"instruction":"모바일에서 한눈에 읽히도록 한 문단 1~2문장, 문단 사이 빈 줄 1개, 긴 문장은 의미 단위로 줄바꿈하고 질문/CTA는 별도 문단으로 분리"}}'::jsonb`,
+    `update roader_content_profiles set style_rules = coalesce(style_rules,'{}'::jsonb) || '{"mobile_format":{"priority":"required","paragraph_max_sentences":2,"blank_line_between_paragraphs":true,"target_paragraphs":"5~7","max_line_chars":58,"split_long_sentences":true,"separate_question_or_cta":true,"instruction":"모바일에서 한눈에 읽히도록 한 문단 1~2문장, 문단 사이 빈 줄 1개, 긴 문장은 의미 단위로 줄바꿈하고 질문/CTA는 별도 문단으로 분리"}}'::jsonb where not (coalesce(style_rules,'{}'::jsonb) ? 'mobile_format')`,
     `create index if not exists idx_roader_style_samples_account on roader_style_samples(account_id, created_at desc)`,
     `create index if not exists idx_roader_style_sources_account on roader_style_sources(account_id, is_active)`,
     `alter table roader_accounts alter column daily_post_goal set default 0`,

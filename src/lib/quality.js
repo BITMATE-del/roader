@@ -19,8 +19,18 @@ function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
 }
 
-function countParagraphs(text) {
-  return text.split(/\n\s*\n/).map(v => v.trim()).filter(Boolean).length;
+function paragraphStats(text) {
+  const blocks = text.split(/\n\s*\n/).map(v => v.trim()).filter(Boolean);
+  const sentenceCounts = blocks.map(block => {
+    const matches = block.match(/[^.!?。！？]+(?:[.!?。！？]+|$)/g) || [];
+    return matches.map(v => v.trim()).filter(Boolean).length;
+  });
+  return {
+    blocks,
+    count: blocks.length,
+    overloaded: sentenceCounts.filter(n => n > 2).length,
+    maxSentences: sentenceCounts.length ? Math.max(...sentenceCounts) : 0
+  };
 }
 
 function lineStats(text) {
@@ -29,18 +39,33 @@ function lineStats(text) {
   return {
     lines,
     avg: lengths.length ? lengths.reduce((a, b) => a + b, 0) / lengths.length : 0,
-    max: lengths.length ? Math.max(...lengths) : 0
+    max: lengths.length ? Math.max(...lengths) : 0,
+    long: lengths.filter(v => v > 58).length,
+    veryLong: lengths.filter(v => v > 72).length
   };
 }
 
 export function scorePost({ text = "", mediaMode = "text", hasImage = false, recentTexts = [] }) {
   const trimmed = text.trim();
+
+  if (!trimmed) {
+    return {
+      score: 0,
+      status: "empty",
+      blockers: [],
+      metrics: {
+        hook: 0, readability: 0, substance: 0, engagement: 0,
+        naturalness: 0, duplicate: 0, visual: 0, safety: 0
+      }
+    };
+  }
+
   const chars = trimmed.length;
-  const paragraphs = countParagraphs(trimmed);
+  const paragraphs = paragraphStats(trimmed);
   const lines = lineStats(trimmed);
   const firstLine = lines.lines[0] || "";
-  const lastBlock = lines.lines.slice(-2).join(" ");
-  const hasQuestion = /[?？]|궁금|어디|어떻게|어떤 이유|선택/.test(lastBlock);
+  const lastParagraph = paragraphs.blocks[paragraphs.blocks.length - 1] || "";
+  const hasQuestion = /[?？]|궁금|어디|어떻게|어떤 이유|선택/.test(lastParagraph);
   const banned = bannedPatterns.filter(r => r.test(trimmed)).map(r => r.source);
   const aiTickHits = aiTics.filter(t => trimmed.includes(t)).length;
 
@@ -50,17 +75,22 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   if (firstLine.length > 55) hook -= 20;
   hook = clamp(hook);
 
-  let readability = 55;
-  if (lines.avg >= 8 && lines.avg <= 34) readability += 20;
-  if (lines.max <= 55) readability += 15;
-  if (paragraphs >= 2) readability += 10;
-  if (lines.max > 80) readability -= 25;
+  let readability = 42;
+  if (lines.avg >= 8 && lines.avg <= 34) readability += 18;
+  else if (lines.avg <= 42) readability += 10;
+  if (lines.max <= 58) readability += 12;
+  if (paragraphs.count >= 5) readability += 24;
+  else if (paragraphs.count >= 3) readability += 14;
+  else if (paragraphs.count === 2) readability += 6;
+  readability -= Math.min(24, lines.long * 5);
+  readability -= Math.min(30, lines.veryLong * 12);
+  readability -= Math.min(30, paragraphs.overloaded * 12);
   readability = clamp(readability);
 
   let substance = 35;
   if (chars >= 120) substance += 20;
   if (chars >= 180) substance += 15;
-  if (/이유|때문|기준|수요|실적|금리|수급|흐름|시장|리스크|반면/.test(trimmed)) substance += 20;
+  if (/이유|때문|기준|수요|실적|금리|수급|흐름|시장|리스크|반면|모멘텀|업황/.test(trimmed)) substance += 20;
   if (chars < 70) substance -= 30;
   substance = clamp(substance);
 
@@ -70,7 +100,7 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   engagement = clamp(engagement);
 
   let naturalness = 88 - aiTickHits * 8;
-  if (lines.lines.length >= 4) naturalness += 4;
+  if (paragraphs.count >= 4) naturalness += 5;
   if (/첫째|둘째|셋째/.test(trimmed) && chars < 220) naturalness -= 8;
   naturalness = clamp(naturalness);
 
@@ -101,7 +131,22 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   const blockers = [];
   if (chars < 90) blockers.push("본문이 너무 짧습니다. 최소한 의견·근거가 느껴지도록 내용을 보강하세요.");
   if (substance < 65) blockers.push("근거 또는 설명이 부족합니다. 왜 그런지 한 단계 더 설명하세요.");
-  if (readability < 65) blockers.push("모바일 가독성이 낮습니다. 긴 문장을 나누고 줄바꿈을 조정하세요.");
+
+  if (chars >= 180 && paragraphs.count < 5) {
+    blockers.push("모바일 가독성을 위해 본문을 최소 5개 문단으로 나누고 문단 사이에 빈 줄을 넣어주세요.");
+  } else if (chars >= 120 && paragraphs.count < 3) {
+    blockers.push("본문을 의미 단위 문단으로 나누고 문단 사이에 빈 줄을 넣어주세요.");
+  }
+  if (paragraphs.overloaded > 0) {
+    blockers.push("한 문단에는 최대 1~2문장만 사용해주세요. 긴 문단을 분리하세요.");
+  }
+  if (lines.veryLong > 0) {
+    blockers.push("한 줄이 너무 깁니다. 의미가 바뀌는 지점에서 줄바꿈해 모바일 읽기 흐름을 정리하세요.");
+  }
+  if (readability < 65 && !blockers.some(v => v.includes("모바일") || v.includes("문단") || v.includes("한 줄"))) {
+    blockers.push("모바일 가독성이 낮습니다. 짧은 문단과 줄바꿈으로 읽기 흐름을 조정하세요.");
+  }
+
   if (banned.length) blockers.push("과장·수익 보장성 표현이 감지되었습니다.");
   if (duplicate < 60) blockers.push("최근 게시물과 도입부가 지나치게 유사합니다.");
   if (mediaMode === "image" && !hasImage) blockers.push("이미지형 게시물에는 이미지가 필요합니다.");
@@ -121,7 +166,8 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
 }
 
 export const qualityLabel = {
-  ready: "예약 가능",
-  review: "검토 필요",
+  empty: "작성 전",
+  ready: "게시 가능",
+  review: "검토 가능",
   blocked: "게시 차단"
 };

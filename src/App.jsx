@@ -107,24 +107,31 @@ function AccountModal({open,onClose,onSaved}){
       setError("계정명과 Threads 핸들은 필수입니다.");
       return;
     }
-    setSaving(true); setError("");
-    let account=null;
+    setSaving(true);
+    setError("");
+
+    let account;
     try{
       const saved=await api("/api/accounts",{method:"POST",body:JSON.stringify(form)});
       account=saved.account;
-      await onSaved();
-
-      try{
-        const oauth=await api(`/api/threads/connect?state=account_${account.id}`);
-        if(!oauth.url) throw new Error("missing_oauth_url");
-        window.location.href=oauth.url;
-        return;
-      }catch{
-        setError("계정은 저장됐지만 Threads 연결을 시작하지 못했습니다. 계정 관리에서 다시 연결할 수 있습니다.");
-      }
     }catch(e){
-      setError(e.message==="handle_exists"?"이미 등록된 핸들입니다.":"계정 저장에 실패했습니다.");
-    }finally{
+      setSaving(false);
+      setError(e.message==="handle_exists"
+        ?"이미 등록된 핸들입니다. 계정 관리에서 기존 계정을 확인해주세요."
+        :`계정 저장 실패 · ${e.message||"server_error"}`);
+      return;
+    }
+
+    // 계정 저장 성공 이후의 화면 새로고침 실패는 저장 실패로 취급하지 않는다.
+    Promise.resolve(onSaved()).catch(()=>{});
+
+    try{
+      const oauth=await api(`/api/threads/connect?state=account_${account.id}`);
+      if(!oauth.url) throw new Error("missing_oauth_url");
+      window.location.href=oauth.url;
+      return;
+    }catch(e){
+      setError(`계정 저장 완료 · Threads 연결 시작 실패 (${e.message||"oauth_error"}). 계정 관리에서 다시 연결할 수 있습니다.`);
       setSaving(false);
     }
   }

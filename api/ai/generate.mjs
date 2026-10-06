@@ -15,6 +15,18 @@ function cleanHandle(v){
   return String(v||"").replace(/^@/,"");
 }
 
+function sanitizeVisibleText(value){
+  return String(value||"")
+    .replace(/\[[^\]]+\]\((https?:\/\/[^)]+)\)/gi,"")
+    .replace(/https?:\/\/\S+/gi,"")
+    .replace(/\bwww\.\S+/gi,"")
+    .replace(/\[[a-z0-9.-]+\]/gi,"")
+    .replace(/(^|\n)\s*(출처|source)\s*:\s*.*(?=\n|$)/gi,"$1")
+    .replace(/[ \t]+\n/g,"\n")
+    .replace(/\n{3,}/g,"\n\n")
+    .trim();
+}
+
 export default async function handler(req,res){
   try{
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
@@ -57,6 +69,9 @@ export default async function handler(req,res){
       "소재 선정 우선순위: 계정 섹터 적합성, 오늘 시의성, 투자자가 왜 봐야 하는지 설명할 여지, 최근 게시물과 비중복, 과도한 단기 시세 추종 회피.",
       "단순 뉴스 복붙이 아니라 '왜 중요한지 / 무엇을 체크해야 하는지 / 이미 오른 종목과 아직 관심이 덜 붙은 구간을 어떻게 구분하는지'를 개인 관점으로 풀어낸다.",
       "뉴스·시장 사실은 검색으로 확인된 내용만 사용한다. 확인되지 않은 숫자, 등락률, 외국인 수급, 실적 수치, 발표 내용은 만들지 않는다.",
+      "중요: 검색 출처는 사실 확인용일 뿐 사용자에게 보이는 본문이나 댓글에 절대 노출하지 않는다.",
+      "본문과 댓글에는 URL, 도메인명, [출처], 출처:, source:, 마크다운 링크, 괄호 안 링크를 절대 넣지 않는다.",
+      "최종 사용자 텍스트에는 오직 자연스러운 한국어 본문과 댓글만 남긴다.",
       "검색 결과가 엇갈리면 단정하지 말고 확인 가능한 사실 수준으로 표현한다.",
       "항상 1인칭은 '제가/저는'을 사용하고 '저희'는 사용하지 않는다.",
       "수익 보장, 급등 확정, 원금 보장, 100%, 무조건 오른다 같은 표현은 금지한다.",
@@ -147,9 +162,9 @@ export default async function handler(req,res){
 
     return res.status(200).json({
       ok:true,
-      selected_topic:String(parsed.selected_topic||"").trim(),
-      body:String(parsed.body||"").trim(),
-      reply:String(parsed.reply||"").trim(),
+      selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
+      body:sanitizeVisibleText(parsed.body||""),
+      reply:sanitizeVisibleText(parsed.reply||""),
       model
     });
   }catch(error){

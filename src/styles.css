@@ -73,3 +73,9 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 .auto-note b{font-size:11px;color:#43516a;white-space:nowrap}
 .auto-note span{font-size:11px;color:#7d899b;line-height:1.5}
 @media(max-width:760px){.quick-buttons{gap:6px}.choice{padding:8px 10px}.auto-note{display:block}.auto-note span{display:block;margin-top:4px}}
+
+.publish-actions{display:grid;grid-template-columns:minmax(150px,.42fr) minmax(220px,1fr);gap:10px;margin-top:12px}
+.publish-actions button{min-height:44px;display:flex;align-items:center;justify-content:center;gap:8px}
+.draft-action{width:100%}
+.publish-action{width:100%;margin:0}
+@media(max-width:760px){.publish-actions{grid-template-columns:1fr}}

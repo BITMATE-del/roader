@@ -500,40 +500,93 @@ function Writer({accounts,posts,onSaved}){
   const [text,setText]=useState("");
   const [image,setImage]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [publishing,setPublishing]=useState(false);
   const [message,setMessage]=useState("");
+  const [messageType,setMessageType]=useState("success");
 
   useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
   const quality=useMemo(()=>scorePost({text,mediaMode,hasImage:!!image,recentTexts:posts.map(p=>p.body)}),[text,mediaMode,image,posts]);
+  const selected=accounts.find(a=>String(a.id)===account);
+  const connected=!!selected?.threads_user_id;
 
   async function saveDraft(){
     if(!account||!text.trim()) return;
-    setSaving(true);setMessage("");
+    setSaving(true);setMessage("");setMessageType("success");
     try{
       await api("/api/posts",{method:"POST",body:JSON.stringify({
         account_id:Number(account),post_type:type,media_mode:mediaMode,body:text,
         quality_score:quality.score,quality_status:quality.status,quality_details:quality,status:"draft"
       })});
-      setMessage("초안이 실제 DB에 저장되었습니다.");
+      setMessage("초안이 DB에 저장되었습니다.");
       await onSaved();
-    }catch{setMessage("저장에 실패했습니다.");}
-    finally{setSaving(false);}
+    }catch(e){
+      setMessageType("error");
+      setMessage(`초안 저장 실패 · ${e.message||"server_error"}`);
+    }finally{setSaving(false);}
   }
 
-  const selected=accounts.find(a=>String(a.id)===account);
+  async function publishNow(){
+    if(!account||!text.trim()||publishing) return;
+    if(!connected){
+      setMessageType("error");
+      setMessage("선택한 계정은 Threads 연결이 필요합니다.");
+      return;
+    }
+    if(mediaMode!=="text"){
+      setMessageType("error");
+      setMessage("이미지 게시를 위해 이미지 저장소 연결이 먼저 필요합니다. 현재는 텍스트 게시만 지원합니다.");
+      return;
+    }
+    if(quality.status==="blocked"){
+      setMessageType("error");
+      setMessage("품질검사에서 차단된 게시물은 실제 게시할 수 없습니다.");
+      return;
+    }
+
+    setPublishing(true);setMessage("");setMessageType("success");
+    try{
+      const result=await api("/api/threads/publish",{method:"POST",body:JSON.stringify({
+        account_id:Number(account),
+        post_type:type,
+        media_mode:mediaMode,
+        body:text,
+        quality_score:quality.score,
+        quality_status:quality.status,
+        quality_details:quality
+      })});
+      setMessage(`Threads 게시 완료 · 게시물 ID ${result.threads_post_id}`);
+      setText("");
+      setImage(null);
+      await onSaved();
+    }catch(e){
+      setMessageType("error");
+      const map={
+        threads_account_not_connected:"Threads 계정 연결 정보가 없습니다.",
+        threads_create_failed:"Threads 게시물 생성에 실패했습니다.",
+        threads_publish_failed:"Threads 게시 최종 발행에 실패했습니다.",
+        text_only_for_now:"현재는 텍스트 게시만 지원합니다."
+      };
+      setMessage(map[e.message]||`Threads 게시 실패 · ${e.message||"server_error"}`);
+    }finally{setPublishing(false);}
+  }
+
   if(accounts.length===0) return <><div className="hero-row"><div><h1>AI 게시물 생성</h1><p>계정별 콘텐츠 작성 공간입니다.</p></div></div><div className="panel"><EmptyState title="먼저 Threads 계정을 등록하세요." desc="등록 계정이 있어야 계정별 페르소나를 적용한 게시물을 만들 수 있습니다."/></div></>;
 
   return <>
-    <div className="hero-row"><div><h1>AI 게시물 생성</h1><p>현재 단계에서는 실제 계정별 초안 작성·품질검사·DB 저장까지 연결되어 있습니다.</p></div></div>
+    <div className="hero-row"><div><h1>AI 게시물 생성</h1><p>초안 저장과 실제 Threads 게시까지 연결되어 있습니다.</p></div></div>
     <div className="writer-grid">
       <div className="panel composer">
         <label>계정 선택</label><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
-        <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span>{selected?.style_sample_count>0&&<small>학습 스타일 {selected.style_confidence}% · 샘플 {selected.style_sample_count}개 · {(selected.learned_style?.style_tags||[]).join(" · ")}</small>}</div>
+        <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span><small>{connected?"Threads 연결됨 · 실제 게시 가능":"Threads 미연결 · 계정 관리에서 먼저 연결 필요"}</small>{selected?.style_sample_count>0&&<small>학습 스타일 {selected.style_confidence}% · 샘플 {selected.style_sample_count}개 · {(selected.learned_style?.style_tags||[]).join(" · ")}</small>}</div>
         <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
-        {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 저장소 연결 전까지 품질 검사 용도로만 사용됩니다.</span></label>}
-        <label>게시물 본문</label><textarea rows="15" value={text} onChange={e=>setText(e.target.value)} placeholder="게시물 본문을 작성하세요. AI 자동생성 API는 다음 단계에서 이 입력란에 결과를 생성하도록 연결합니다."/>
-        <button className="generate" onClick={saveDraft} disabled={saving||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 품질검사 후 초안 저장</button>
-        {message&&<div className="save-message">{message}</div>}
+        {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 실제 게시를 위해 저장소 연결이 필요합니다.</span></label>}
+        <label>게시물 본문</label><textarea rows="15" value={text} onChange={e=>setText(e.target.value)} placeholder="Threads에 게시할 본문을 작성하세요."/>
+        <div className="publish-actions">
+          <button className="ghost draft-action" onClick={saveDraft} disabled={saving||publishing||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 초안 저장</button>
+          <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||!connected||mediaMode!=="text"||!text.trim()||quality.status==="blocked"}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>
+        </div>
+        {message&&<div className={messageType==="error"?"form-error":"save-message"}>{message}</div>}
       </div>
       <div className="right-stack">
         <div className="panel">

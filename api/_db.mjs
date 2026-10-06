@@ -165,6 +165,11 @@ export async function ensureSchema() {
     `create index if not exists idx_roader_leads_source on roader_leads(source_code, created_at desc)`
   ];
 
+  statements.push(
+    `alter table roader_leads add column if not exists receipt_number text`,
+    `create unique index if not exists idx_roader_leads_receipt_number on roader_leads(receipt_number) where receipt_number is not null`
+  );
+
   for (const statement of statements) {
     await sql(statement);
   }

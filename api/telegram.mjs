@@ -192,11 +192,20 @@ async function submit(query, age, interest, exp, source) {
   const username=user.username ? "@" + user.username : null;
 
   const existing=await sql(
-    "select * from roader_leads where telegram_user_id=$1 and status in ('pending','contacting') order by created_at desc limit 1",
+    "select * from roader_leads where telegram_user_id=$1 and status in ('pending','contacting','hold') order by created_at desc limit 1",
     [String(user.id)]
   );
 
   let lead=existing[0];
+  if(lead && !lead.receipt_number){
+    const receipt=await makeReceipt(sql);
+    const rows=await sql(
+      "update roader_leads set receipt_number=$1 where id=$2 returning *",
+      [receipt,lead.id]
+    );
+    lead=rows[0];
+  }
+
   if(!lead){
     const receipt=await makeReceipt(sql);
     const sourcePostId=await resolveSourcePost(sql,source);
@@ -216,26 +225,7 @@ async function submit(query, age, interest, exp, source) {
     hour:"2-digit",minute:"2-digit",hour12:false
   }).format(new Date());
 
-  await send(
-    ADMIN_CHAT_ID,
-    "🧭 <b>신규 상담 신청 접수</b>\n\n" +
-      "🔖 접수번호 : <b>" + esc(lead.receipt_number) + "</b>\n" +
-      "👤 이름 : <b>" + esc(fullName) + "</b>\n" +
-      "🪪 Telegram : <b>" + esc(username||"없음") + "</b>\n" +
-      "🔢 User ID : <code>" + user.id + "</code>\n" +
-      "🎂 연령 : <b>" + esc(AGE_LABELS[age]||age) + "</b>\n" +
-      "📊 관심분야 : <b>" + esc(INTEREST_LABELS[interest]||interest) + "</b>\n" +
-      "📈 투자경험 : <b>" + esc(EXP_LABELS[exp]||exp) + "</b>\n" +
-      "🔗 유입경로 : <b>" + esc(sourceLabel(source)) + "</b>\n" +
-      "🕒 신청시간 : <b>" + esc(now) + "</b>",
-    {
-      reply_markup: kb([[
-        { text: "✅ 상담 완료", callback_data: "adm|done|" + lead.id },
-        { text: "⏸ 보류", callback_data: "adm|hold|" + lead.id }
-      ]])
-    }
-  );
-
+  // 신청자에게는 DB 저장 직후 바로 접수 완료를 보여준다.
   await edit(
     query.message.chat.id,
     query.message.message_id,
@@ -246,6 +236,31 @@ async function submit(query, age, interest, exp, source) {
       "상담원에게 연락이 오면\n<b>위 접수번호를 말씀해주세요.</b>\n\n" +
       "접수번호는 상담 확인을 위해 필요하니\n안내가 완료될 때까지 보관해주세요."
   );
+
+  // 관리자 알림 실패가 신청 접수 자체를 막지 않도록 분리한다.
+  try{
+    await send(
+      ADMIN_CHAT_ID,
+      "🧭 <b>신규 상담 신청 접수</b>\n\n" +
+        "🔖 접수번호 : <b>" + esc(lead.receipt_number) + "</b>\n" +
+        "👤 이름 : <b>" + esc(fullName) + "</b>\n" +
+        "🪪 Telegram : <b>" + esc(username||"없음") + "</b>\n" +
+        "🔢 User ID : <code>" + user.id + "</code>\n" +
+        "🎂 연령 : <b>" + esc(AGE_LABELS[age]||age) + "</b>\n" +
+        "📊 관심분야 : <b>" + esc(INTEREST_LABELS[interest]||interest) + "</b>\n" +
+        "📈 투자경험 : <b>" + esc(EXP_LABELS[exp]||exp) + "</b>\n" +
+        "🔗 유입경로 : <b>" + esc(sourceLabel(source)) + "</b>\n" +
+        "🕒 신청시간 : <b>" + esc(now) + "</b>",
+      {
+        reply_markup: kb([[
+          { text: "✅ 상담 완료", callback_data: "adm|done|" + lead.id },
+          { text: "⏸ 보류", callback_data: "adm|hold|" + lead.id }
+        ]])
+      }
+    );
+  }catch(adminError){
+    console.error("telegram-admin-notify",adminError);
+  }
 }
 
 async function callback(query) {

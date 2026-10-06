@@ -249,8 +249,10 @@ function StyleLearning({accounts,onRefresh}){
   const [data,setData]=useState({sources:[],profile:null,samples:[]});
   const [loading,setLoading]=useState(false);
   const [message,setMessage]=useState("");
+  const [integrations,setIntegrations]=useState({threads:{configured:false}});
 
   useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
+  useEffect(()=>{ api("/api/integrations").then(setIntegrations).catch(()=>{}); },[]);
 
   async function load(id=account){
     if(!id) return;
@@ -264,6 +266,26 @@ function StyleLearning({accounts,onRefresh}){
   }
 
   useEffect(()=>{ if(account) load(account); },[account]);
+
+  async function autoFetch(){
+    if(!account||!sourceHandle.trim()){
+      setMessage("참고 Threads 계정 핸들을 입력해주세요.");
+      return;
+    }
+    setLoading(true);setMessage("");
+    try{
+      const r=await api("/api/style-fetch",{method:"POST",body:JSON.stringify({
+        account_id:Number(account),source_handle:sourceHandle.trim(),label:label.trim()
+      })});
+      setMessage(`자동 수집 완료 · 가져온 게시물 ${r.fetched}개 · 사용 가능 ${r.usable}개 · 신규 학습 ${r.inserted}개 · 신뢰도 ${r.confidence}%`);
+      await load(account);
+      await onRefresh();
+    }catch(e){
+      if(e.message==="threads_access_token_missing") setMessage("Threads API 토큰이 아직 연결되지 않았습니다.");
+      else if(e.message==="threads_profile_discovery_required") setMessage("Meta 앱에 threads_profile_discovery 권한 승인이 필요합니다.");
+      else setMessage("참고 계정 게시물 자동 수집에 실패했습니다.");
+    }finally{setLoading(false);}
+  }
 
   async function learn(){
     if(!account||!sourceHandle.trim()||!samplesText.trim()){
@@ -310,10 +332,18 @@ function StyleLearning({accounts,onRefresh}){
           <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="예: 국내주식 질문형 레퍼런스"/></div>
         </div>
 
+        <div className={`integration-strip ${integrations?.threads?.configured?"ready":"waiting"}`}>
+          <div><b>Threads 공개 프로필 자동 수집</b><span>{integrations?.threads?.configured?"API 토큰 연결됨":"API 토큰 연결 필요"}</span></div>
+          <span className={`badge ${integrations?.threads?.configured?"green":"gray"}`}>{integrations?.threads?.configured?"사용 가능":"미연결"}</span>
+        </div>
+        <button className="generate secondary-generate" onClick={autoFetch} disabled={loading||!sourceHandle.trim()}>{loading?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} 이 계정 게시물 자동 가져오기 + 학습</button>
+
+        <div className="or-divider"><span>또는 직접 샘플 입력</span></div>
+
         <label>게시물 샘플</label>
-        <textarea rows="16" value={samplesText} onChange={e=>setSamplesText(e.target.value)} placeholder={"게시물 원문을 붙여넣으세요.\n\n여러 게시물을 넣을 때는 게시물 사이에\n===POST===\n를 넣어 구분하세요."}/>
-        <div className="learning-note">권장: 계정당 최소 10개, 가능하면 20~50개 샘플. 샘플이 많을수록 스타일 신뢰도가 올라갑니다.</div>
-        <button className="generate" onClick={learn} disabled={loading}>{loading?<Loader2 className="spin" size={17}/>:<BrainCircuit size={17}/>} 스타일 분석 및 학습</button>
+        <textarea rows="12" value={samplesText} onChange={e=>setSamplesText(e.target.value)} placeholder={"게시물 원문을 붙여넣으세요.\n\n여러 게시물을 넣을 때는 게시물 사이에\n===POST===\n를 넣어 구분하세요."}/>
+        <div className="learning-note">자동 수집이 아직 연결되지 않았거나, 특정 게시물만 학습시키고 싶을 때 사용하세요. 권장 샘플은 20~50개입니다.</div>
+        <button className="generate" onClick={learn} disabled={loading}>{loading?<Loader2 className="spin" size={17}/>:<BrainCircuit size={17}/>} 직접 샘플 분석 및 학습</button>
         {message&&<div className="save-message">{message}</div>}
       </div>
 
@@ -345,7 +375,7 @@ function StyleLearning({accounts,onRefresh}){
 
         <div className="panel">
           <SectionTitle title={`참고 계정 (${data.sources?.length||0})`}/>
-          {(data.sources||[]).length?(data.sources||[]).map(s=><div className="style-source" key={s.id}><div><b>{s.source_handle}</b><span>{s.label||"메모 없음"}</span></div><span className="badge green">활성</span></div>):<EmptyState title="등록된 참고 계정이 없습니다." desc="왼쪽에서 참고 Threads 계정과 게시물 샘플을 넣어 학습을 시작하세요."/>}
+          {(data.sources||[]).length?(data.sources||[]).map(s=><div className="style-source" key={s.id}><div><b>{s.source_handle}</b><span>{s.label||"메모 없음"}{s.last_synced_at?` · 최근 자동수집 ${fmtDate(s.last_synced_at)} · ${s.last_sync_count||0}개`:""}</span>{s.last_error&&<small>{s.last_error}</small>}</div><span className="badge green">활성</span></div>):<EmptyState title="등록된 참고 계정이 없습니다." desc="왼쪽에서 참고 Threads 계정과 게시물 샘플을 넣어 학습을 시작하세요."/>}
         </div>
       </div>
     </div>

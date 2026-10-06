@@ -48,9 +48,26 @@ export default async function handler(req,res){
     const shortToken = tokenData.access_token;
     const me = await getMe(shortToken);
 
+    const threadsUserId=String(me.id||"");
+    const threadsUsername=me.username ? "@"+String(me.username).replace(/^@/,"") : "";
+
+    const duplicate=await sql(
+      "select id,name,handle from roader_accounts where threads_user_id=$1 and id<>$2 limit 1",
+      [threadsUserId,accountId]
+    );
+
+    if(duplicate[0]){
+      const q=new URLSearchParams({
+        threads_error:"already_connected",
+        connected_name:String(duplicate[0].name||""),
+        connected_handle:String(duplicate[0].handle||"")
+      });
+      return res.redirect(302,"/?"+q.toString());
+    }
+
     await sql(
-      "update roader_accounts set threads_user_id=$1, threads_access_token_encrypted=$2, handle=case when handle='' then $3 else handle end, updated_at=now() where id=$4",
-      [String(me.id||""), String(shortToken||""), me.username ? "@"+String(me.username).replace(/^@/,"") : "", accountId]
+      "update roader_accounts set threads_user_id=$1, threads_username=$2, threads_access_token_encrypted=$3, updated_at=now() where id=$4",
+      [threadsUserId,threadsUsername,String(shortToken||""),accountId]
     );
 
     return res.redirect(302,"/?threads_connected=1");

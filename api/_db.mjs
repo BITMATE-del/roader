@@ -26,6 +26,7 @@ export async function ensureSchema() {
       telegram_source_code text,
       is_active boolean not null default true,
       threads_user_id text,
+      threads_username text,
       threads_access_token_encrypted text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -195,6 +196,22 @@ export async function ensureSchema() {
     `alter table roader_leads add column if not exists receipt_number text`,
     `alter table roader_leads add column if not exists phone_number text`,
     `create unique index if not exists idx_roader_leads_receipt_number on roader_leads(receipt_number) where receipt_number is not null`
+  );
+
+  statements.push(
+    `alter table roader_accounts add column if not exists threads_username text`,
+    `with ranked as (
+       select id, row_number() over (partition by threads_user_id order by id asc) as rn
+       from roader_accounts
+       where threads_user_id is not null and threads_user_id <> ''
+     )
+     update roader_accounts a
+     set threads_user_id=null, threads_username=null, threads_access_token_encrypted=null, updated_at=now()
+     from ranked r
+     where a.id=r.id and r.rn>1`,
+    `create unique index if not exists idx_roader_accounts_threads_user_unique
+       on roader_accounts(threads_user_id)
+       where threads_user_id is not null and threads_user_id <> ''`
   );
 
   for (const statement of statements) {

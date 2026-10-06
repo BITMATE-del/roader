@@ -306,6 +306,12 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
       setMessage("Threads 계정 연결이 완료되었습니다.");
       window.history.replaceState({}, "", window.location.pathname);
       onRefresh();
+    }else if(params.get("threads_error")==="already_connected"){
+      const name=params.get("connected_name")||"다른 ROADER 계정";
+      const handle=params.get("connected_handle")||"";
+      setMessage(`이 Threads 계정은 이미 ${name}${handle?` (${handle})`:""}에 연결되어 있습니다. 다른 Threads 계정으로 로그인한 뒤 다시 연결해주세요.`);
+      window.history.replaceState({}, "", window.location.pathname);
+      onRefresh();
     }
   },[]);
 
@@ -319,7 +325,7 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
       :<div className="account-list">{filtered.map(a=><div className="account-list-card" key={a.id}>
         <div className="avatar xl">{String(a.name||"?").slice(0,1)}</div>
         <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span>{a.threads_user_id?<span className="badge green">Threads 연결됨</span>:<span className="badge gray">Threads 미연결</span>}</div>
-        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>{a.daily_post_goal?`하루 ${a.daily_post_goal}개`:"게시 목표 미설정"}</span><span>{a.cta_ratio!=null&&Number(a.cta_ratio)>0?`CTA ${a.cta_ratio}%`:"CTA 미설정"}</span>{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div>
+        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>{a.daily_post_goal?`하루 ${a.daily_post_goal}개`:"게시 목표 미설정"}</span><span>{a.cta_ratio!=null&&Number(a.cta_ratio)>0?`CTA ${a.cta_ratio}%`:"CTA 미설정"}</span>{a.threads_username&&<span>실제 연결 {a.threads_username}</span>}{a.threads_user_id&&<span>ID {a.threads_user_id}</span>}</div>
         {a.telegram_source_code&&<div className="referral-box">
           <div><b>프로필 유입 링크</b><span>{`${window.location.origin}/r/${a.telegram_source_code}`}</span></div>
           <button className="ghost referral-copy" onClick={()=>copyReferral(a)}><Copy size={14}/>{copied===a.id?"복사됨":"복사"}</button>

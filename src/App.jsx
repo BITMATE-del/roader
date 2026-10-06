@@ -157,7 +157,7 @@ function Dashboard({data,loading,onRefresh,onCreate,onAddAccount}){
         {accounts.map(a=><div className="account-card" key={a.id}>
           <div className="account-head"><div className="avatar">{String(a.name||"?").slice(0,1)}</div><div><b>{a.name}</b><span>{a.handle}</span></div></div>
           <span className="tag">{a.sector||"섹터 미설정"}</span>
-          <div className="kv"><span>오늘 게시</span><b>{a.posted_today||0}/{a.daily_post_goal||0}</b></div>
+          <div className="kv"><span>오늘 게시</span><b>{a.daily_post_goal ? `${a.posted_today||0}/${a.daily_post_goal}` : fmt(a.posted_today||0)}</b></div>
           <div className="kv"><span>최근 집계 조회</span><b>{fmt(a.latest_views)}</b></div>
           <div className={a.is_active?"live-dot":"muted"}>● {a.is_active?"운영중":"중지"}</div>
         </div>)}
@@ -248,7 +248,7 @@ function ContentSettings({accounts}){
           <div><label>주요 타깃</label><input value={a.target_audience||""} readOnly/></div>
           <div><label>기본 톤</label><input value={a.tone||""} readOnly/></div>
           <div><label>기본 게시물 길이</label><input value={a.min_chars!=null&&a.max_chars!=null?`${a.min_chars}~${a.max_chars}자`:"미설정"} readOnly/></div>
-          <div><label>하루 게시 목표</label><input value={a.daily_post_goal||0} readOnly/></div>
+          <div><label>하루 게시 목표</label><input value={a.daily_post_goal ? `${a.daily_post_goal}개` : "미설정"} readOnly/></div>
         </div>
         <label>페르소나</label><textarea rows="6" value={a.persona||""} readOnly/>
       </div>
@@ -256,7 +256,7 @@ function ContentSettings({accounts}){
         <SectionTitle title="품질 기준"/>
         <div className="kv"><span>최소 검토 기준</span><b>{a.quality_threshold!=null?`${a.quality_threshold}점`:"미설정"}</b></div>
         <div className="kv"><span>자동 예약 가능 기준</span><b>{a.auto_publish_threshold!=null?`${a.auto_publish_threshold}점`:"미설정"}</b></div>
-        <div className="kv"><span>CTA 비율</span><b>{a.cta_ratio||0}%</b></div>
+        <div className="kv"><span>CTA 비율</span><b>{Number(a.cta_ratio)>0 ? `${a.cta_ratio}%` : "미설정"}</b></div>
         <label>콘텐츠 비중</label>
         {Object.entries(a.type_mix||{}).length?Object.entries(a.type_mix).map(([n,v])=><div className="ratio" key={n}><span>{n}</span><div><i style={{width:`${Math.min(100,Number(v)*2)}%`}}/></div><b>{v}%</b></div>):<div className="muted">기본 프로필 생성 대기</div>}
       </div>
@@ -352,7 +352,7 @@ function StyleLearning({accounts,onRefresh}){
 
         <div className="form-grid">
           <div><label>참고 Threads 계정 *</label><input value={sourceHandle} onChange={e=>setSourceHandle(e.target.value)} placeholder="@reference_account"/></div>
-          <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="예: 국내주식 질문형 레퍼런스"/></div>
+          <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="참고 계정 용도 메모"/></div>
         </div>
 
         <div className={`integration-strip ${integrations?.threads?.configured?"ready":"waiting"}`}>

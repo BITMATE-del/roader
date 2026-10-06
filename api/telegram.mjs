@@ -412,6 +412,7 @@ export default async function handler(req,res){
   try{
     const update=req.body||{};
     if(update.message?.text?.startsWith("/start")) await start(update.message);
+    else if(update.message?.text) await handleText(update.message);
     else if(update.callback_query) await callback(update.callback_query);
     return res.status(200).json({ok:true});
   }catch(e){

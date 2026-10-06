@@ -1,59 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   LayoutDashboard, Users, SlidersHorizontal, Sparkles, CalendarDays, History,
   BarChart3, Send, Settings, Plus, Eye, UserRound, MousePointerClick, ClipboardCheck,
-  MoreHorizontal, CheckCircle2, Clock3, AlertTriangle, Image as ImageIcon, FileText,
+  MoreHorizontal, CheckCircle2, AlertTriangle, Image as ImageIcon, FileText,
   MessageCircle, Newspaper, Heart, UploadCloud, WandSparkles, ShieldCheck, XCircle,
-  ArrowUpRight, Search, ChevronDown, Save
+  Search, ChevronDown, Save, RefreshCw, Database, Loader2
 } from "lucide-react";
 import { scorePost, qualityLabel } from "./lib/quality";
-
-const accounts = [
-  { id: 1, name: "부의 길잡이", handle: "@wealth_guide", sector: "국내주식 / 경제", followers: "12.4만", today: "5/5", views: "18,420", status: "운영중", accent: "🧭", persona: "40~60대 · 차분하고 신뢰감 있는 설명형", daily: 5 },
-  { id: 2, name: "미국주식 레이더", handle: "@us_stock_guide", sector: "미국주식 / 빅테크", followers: "8.7만", today: "4/6", views: "10,312", status: "운영중", accent: "🇺🇸", persona: "30~50대 · 빠르고 직관적인 뉴스형", daily: 6 },
-  { id: 3, name: "거시경제 브리핑", handle: "@macro_guide", sector: "거시경제 / 환율", followers: "6.2만", today: "3/5", views: "7,248", status: "운영중", accent: "🌐", persona: "40~60대 · 쉬운 거시 해설", daily: 5 },
-  { id: 4, name: "코인 인사이트", handle: "@coin_insight", sector: "코인 / 블록체인", followers: "5.1만", today: "4/5", views: "4,892", status: "운영중", accent: "₿", persona: "30~50대 · 빠른 수급·시장반응형", daily: 5 },
-  { id: 5, name: "투자하는 사람들", handle: "@invest_mind", sector: "투자심리 / 공감", followers: "3.8만", today: "2/4", views: "3,120", status: "운영중", accent: "👥", persona: "40~60대 · 생활형·공감형", daily: 4 }
-];
-
-const schedules = [
-  ["08:10","부의 길잡이","삼성전자 / 반도체 수급","후킹형","게시완료"],
-  ["09:00","거시경제 브리핑","미국 10년물 금리 해설","정보형","게시완료"],
-  ["09:30","코인 인사이트","BTC 수급 분석","뉴스해설","게시완료"],
-  ["10:20","미국주식 레이더","엔비디아 / AI 이슈","댓글유도","예약됨"],
-  ["11:00","부의 길잡이","SK하이닉스 vs 삼성전자","댓글유도","예약됨"],
-  ["12:30","투자하는 사람들","투자 심리 / 공감","공감형","대기중"],
-  ["14:00","코인 인사이트","알트코인 동향","정보형","대기중"],
-  ["15:30","거시경제 브리핑","CPI 지표 분석","뉴스해설","대기중"]
-];
-
-const recentPosts = [
-  { title: "삼성전자 사는 사람은 주가보다 이것부터...", account: "부의 길잡이", views: "18,420", likes: "1,240", comments: "312", visits: "892", leads: "146" },
-  { title: "미국 CPI, 시장이 주목하는 이유", account: "거시경제 브리핑", views: "12,310", likes: "842", comments: "198", visits: "612", leads: "88" },
-  { title: "BTC 수급 흐름 정리", account: "코인 인사이트", views: "9,842", likes: "612", comments: "145", visits: "420", leads: "76" }
-];
-
-const sampleText = `지금 하나만 고르라고 하면
-
-삼성전자
-vs
-SK하이닉스
-
-어디를 선택하시겠습니까?
-
-단순히 “더 많이 오른 종목” 말고
-앞으로 6개월을 본다는 기준으로요.
-
-저라면 현재 기준으로는 SK하이닉스를 조금 더 봅니다.
-
-이유는 주가가 많이 올라서가 아니라
-앞으로 6개월 동안 시장이 계속 주목할 핵심이
-AI·HBM 수요와 실적 성장이라고 보기 때문입니다.
-
-다만 삼성전자는 체급과 사업 포트폴리오가 있는 만큼
-반도체 업황이 더 넓게 회복되면 이야기가 달라질 수 있고요.
-
-여러분은 어떤 이유로 삼성전자 / SK하이닉스를 선택하셨나요?`;
 
 const navItems = [
   [LayoutDashboard,"대시보드","dashboard"],
@@ -67,120 +20,228 @@ const navItems = [
   [Settings,"설정","settings"]
 ];
 
-function Stat({icon: Icon,label,value,delta}) {
-  return <div className="stat-card">
-    <div className="stat-icon"><Icon size={21}/></div>
-    <div><div className="muted">{label}</div><div className="stat-value">{value}</div><div className="delta">▲ {delta}</div></div>
+const postTypes = [
+  ["후킹형",WandSparkles],["정보형",FileText],["댓글유도형",MessageCircle],
+  ["뉴스해설형",Newspaper],["공감형",Heart]
+];
+
+const initialAccountForm = {
+  name:"", handle:"", sector:"", target_audience:"", tone:"", persona:"",
+  daily_post_goal:5, cta_ratio:5, telegram_source_code:""
+};
+
+function fmt(n){
+  return Number(n || 0).toLocaleString("ko-KR");
+}
+
+function fmtDate(v){
+  if(!v) return "-";
+  return new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v));
+}
+
+function fmtTime(v){
+  if(!v) return "-";
+  return new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v));
+}
+
+async function api(path, options={}){
+  const res = await fetch(path,{
+    headers:{"content-type":"application/json",...(options.headers||{})},
+    ...options
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || "request_failed");
+  return data;
+}
+
+function EmptyState({title,desc,action}){
+  return <div className="empty-state">
+    <Database size={34}/>
+    <b>{title}</b>
+    <p>{desc}</p>
+    {action}
   </div>;
 }
 
-function SectionTitle({title,action}) {
+function Stat({icon:Icon,label,value}){
+  return <div className="stat-card">
+    <div className="stat-icon"><Icon size={21}/></div>
+    <div><div className="muted">{label}</div><div className="stat-value">{fmt(value)}</div><div className="muted">실제 누적 데이터</div></div>
+  </div>;
+}
+
+function SectionTitle({title,action}){
   return <div className="section-title"><h2>{title}</h2>{action}</div>;
 }
 
-function StatusBadge({children}) {
-  const cls = children.includes("완료") ? "green" : children.includes("예약") ? "blue" : "gray";
-  return <span className={`badge ${cls}`}>{children}</span>;
+function StatusBadge({children}){
+  const text=String(children||"");
+  const cls = /완료|published|approved/i.test(text) ? "green" : /예약|scheduled|review/i.test(text) ? "blue" : "gray";
+  return <span className={`badge ${cls}`}>{text}</span>;
 }
 
-function Dashboard({onCreate}) {
+function AccountModal({open,onClose,onSaved}){
+  const [form,setForm]=useState(initialAccountForm);
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState("");
+
+  useEffect(()=>{ if(open){ setForm(initialAccountForm); setError(""); } },[open]);
+  if(!open) return null;
+
+  const set=(key,value)=>setForm(v=>({...v,[key]:value}));
+
+  async function save(){
+    if(!form.name.trim() || !form.handle.trim()){
+      setError("계정명과 Threads 핸들은 필수입니다.");
+      return;
+    }
+    setSaving(true); setError("");
+    try{
+      await api("/api/accounts",{method:"POST",body:JSON.stringify(form)});
+      await onSaved();
+      onClose();
+    }catch(e){
+      setError(e.message==="handle_exists"?"이미 등록된 핸들입니다.":"계정 저장에 실패했습니다.");
+    }finally{setSaving(false);}
+  }
+
+  return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal-card">
+      <SectionTitle title="Threads 계정 추가"/>
+      <div className="form-grid">
+        <div><label>계정명 *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="예: 부의 길잡이"/></div>
+        <div><label>Threads 핸들 *</label><input value={form.handle} onChange={e=>set("handle",e.target.value)} placeholder="@username"/></div>
+        <div><label>섹터</label><input value={form.sector} onChange={e=>set("sector",e.target.value)} placeholder="국내주식 / 반도체"/></div>
+        <div><label>타깃</label><input value={form.target_audience} onChange={e=>set("target_audience",e.target.value)} placeholder="40~60대 투자자"/></div>
+        <div><label>기본 톤</label><input value={form.tone} onChange={e=>set("tone",e.target.value)} placeholder="차분함 · 신뢰감"/></div>
+        <div><label>하루 게시 목표</label><input type="number" min="1" max="30" value={form.daily_post_goal} onChange={e=>set("daily_post_goal",Number(e.target.value))}/></div>
+      </div>
+      <label>계정 페르소나 / 작성 규칙</label>
+      <textarea rows="4" value={form.persona} onChange={e=>set("persona",e.target.value)} placeholder="이 계정이 어떤 관점과 말투로 글을 써야 하는지 적어주세요."/>
+      <div className="form-grid">
+        <div><label>CTA 비율 (%)</label><input type="number" min="0" max="100" value={form.cta_ratio} onChange={e=>set("cta_ratio",Number(e.target.value))}/></div>
+        <div><label>Telegram 유입코드</label><input value={form.telegram_source_code} onChange={e=>set("telegram_source_code",e.target.value)} placeholder="threads_profile_01"/></div>
+      </div>
+      {error&&<div className="form-error">{error}</div>}
+      <div className="modal-actions"><button className="ghost" onClick={onClose}>취소</button><button className="primary" onClick={save} disabled={saving}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 저장</button></div>
+    </div>
+  </div>;
+}
+
+function Dashboard({data,loading,onRefresh,onCreate,onAddAccount}){
+  const totals=data?.totals||{};
+  const accounts=data?.accounts||[];
+  const schedules=data?.schedules||[];
+  const posts=data?.posts||[];
+  const goal=100000;
+  const views=Number(totals.views||0);
+  const pct=Math.min(100,Math.round((views/goal)*100));
+
   return <>
     <div className="hero-row">
-      <div>
-        <h1>대시보드</h1>
-        <p>여러 Threads 계정의 콘텐츠를 자동으로 생성하고 게시하며, 텔레그램 유입까지 연결합니다.</p>
-      </div>
-      <button className="primary" onClick={onCreate}><Sparkles size={16}/> 게시물 생성</button>
+      <div><h1>대시보드</h1><p>실제 등록 계정과 게시 성과, 텔레그램 전환 데이터를 표시합니다.</p></div>
+      <div className="toolbar"><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button><button className="primary" onClick={onCreate}><Sparkles size={16}/> 게시물 생성</button></div>
     </div>
 
     <div className="stats">
-      <Stat icon={Eye} label="전체 조회수" value="42,360" delta="18.2%"/>
-      <Stat icon={UserRound} label="프로필 방문" value="1,842" delta="21.5%"/>
-      <Stat icon={MousePointerClick} label="봇 진입 수" value="318" delta="32.1%"/>
-      <Stat icon={ClipboardCheck} label="신청 완료" value="142" delta="32.7%"/>
+      <Stat icon={Eye} label="전체 조회수" value={totals.views}/>
+      <Stat icon={UserRound} label="프로필 방문" value={totals.profile_visits}/>
+      <Stat icon={MousePointerClick} label="봇 진입 수" value={totals.bot_entries}/>
+      <Stat icon={ClipboardCheck} label="신청 완료" value={totals.applications}/>
     </div>
 
     <div className="panel">
-      <SectionTitle title="계정 현황 (5)" action={<button className="ghost"><Plus size={15}/> 계정 추가</button>}/>
-      <div className="account-grid">
-        {accounts.map(a => <div className="account-card" key={a.id}>
-          <div className="account-head"><div className="avatar">{a.accent}</div><div><b>{a.name}</b><span>{a.handle}</span></div></div>
-          <span className="tag">{a.sector}</span>
-          <div className="kv"><span>게시</span><b>{a.today}</b></div>
-          <div className="kv"><span>팔로워</span><b>{a.followers}</b></div>
-          <div className="kv"><span>오늘 조회</span><b>{a.views}</b></div>
-          <div className="live-dot">● {a.status}</div>
+      <SectionTitle title={`계정 현황 (${accounts.length})`} action={<button className="ghost" onClick={onAddAccount}><Plus size={15}/> 계정 추가</button>}/>
+      {loading?<div className="loading-line"><Loader2 className="spin"/> 불러오는 중</div>:accounts.length===0?
+        <EmptyState title="등록된 Threads 계정이 없습니다." desc="첫 계정을 등록하면 여기부터 실제 운영 데이터가 채워집니다." action={<button className="primary" onClick={onAddAccount}><Plus size={15}/> 첫 계정 등록</button>}/>
+      :<div className="account-grid">
+        {accounts.map(a=><div className="account-card" key={a.id}>
+          <div className="account-head"><div className="avatar">{String(a.name||"?").slice(0,1)}</div><div><b>{a.name}</b><span>{a.handle}</span></div></div>
+          <span className="tag">{a.sector||"섹터 미설정"}</span>
+          <div className="kv"><span>오늘 게시</span><b>{a.posted_today||0}/{a.daily_post_goal||0}</b></div>
+          <div className="kv"><span>최근 집계 조회</span><b>{fmt(a.latest_views)}</b></div>
+          <div className={a.is_active?"live-dot":"muted"}>● {a.is_active?"운영중":"중지"}</div>
         </div>)}
-      </div>
+      </div>}
     </div>
 
     <div className="panel">
-      <SectionTitle title="오늘의 게시 일정 (12)" action={<div className="tabs"><span className="active">전체</span><span>대기 4</span><span>예약 5</span><span>게시완료 3</span></div>}/>
-      <div className="table-wrap">
-        <table><thead><tr><th>시간</th><th>계정</th><th>콘텐츠 주제</th><th>유형</th><th>상태</th><th>작업</th></tr></thead>
-        <tbody>{schedules.map((r,i)=><tr key={i}>{r.map((c,j)=><td key={j}>{j===3?<span className="tag">{c}</span>:j===4?<StatusBadge>{c}</StatusBadge>:c}</td>)}<td><MoreHorizontal size={18}/></td></tr>)}</tbody></table>
-      </div>
+      <SectionTitle title={`오늘의 게시 일정 (${schedules.length})`}/>
+      {schedules.length===0?<EmptyState title="오늘 등록된 게시 일정이 없습니다." desc="게시물을 저장한 뒤 스케줄러에서 예약하면 여기에 표시됩니다."/>:
+      <div className="table-wrap"><table><thead><tr><th>시간</th><th>계정</th><th>게시물</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>
+        {schedules.map(s=><tr key={s.id}><td>{fmtTime(s.scheduled_at)}</td><td>{s.account_name}</td><td className="text-cell">{s.body}</td><td><span className="tag">{s.post_type}</span></td><td><StatusBadge>{s.status}</StatusBadge></td><td>{s.quality_score??"-"}</td></tr>)}
+      </tbody></table></div>}
     </div>
 
     <div className="bottom-grid">
       <div className="panel">
         <SectionTitle title="최근 게시 성과"/>
-        <table><thead><tr><th>게시물</th><th>계정</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>프로필 방문</th><th>봇 진입</th></tr></thead>
-        <tbody>{recentPosts.map((r,i)=><tr key={i}><td>{r.title}</td><td>{r.account}</td><td>{r.views}</td><td>{r.likes}</td><td>{r.comments}</td><td>{r.visits}</td><td>{r.leads}</td></tr>)}</tbody></table>
+        {posts.length===0?<EmptyState title="저장된 게시물이 없습니다." desc="실제 게시물이 저장되면 최신 성과가 표시됩니다."/>:
+        <div className="table-wrap"><table><thead><tr><th>게시물</th><th>계정</th><th>조회수</th><th>좋아요</th><th>댓글</th><th>프로필 방문</th><th>봇 진입</th></tr></thead><tbody>
+          {posts.map(p=><tr key={p.id}><td className="text-cell">{p.body}</td><td>{p.account_name}</td><td>{fmt(p.views)}</td><td>{fmt(p.likes)}</td><td>{fmt(p.replies)}</td><td>{fmt(p.profile_visits)}</td><td>{fmt(p.bot_entries)}</td></tr>)}
+        </tbody></table></div>}
       </div>
       <div className="panel goal">
         <SectionTitle title="이번 달 목표"/>
         <div className="goal-number">100,000 <span>노출</span></div>
-        <div className="progress"><i style={{width:"42.36%"}}/></div>
-        <div className="muted">42,360 / 100,000 · 42%</div>
+        <div className="progress"><i style={{width:`${pct}%`}}/></div>
+        <div className="muted">{fmt(views)} / 100,000 · {pct}%</div>
       </div>
     </div>
   </>;
 }
 
-function Accounts() {
+function Accounts({accounts,loading,onAdd,onRefresh}){
+  const [q,setQ]=useState("");
+  const filtered=accounts.filter(a=>[a.name,a.handle,a.sector,a.persona].join(" ").toLowerCase().includes(q.toLowerCase()));
   return <>
-    <div className="hero-row"><div><h1>Threads 계정 관리</h1><p>계정별 페르소나, 섹터, 게시 빈도와 콘텐츠 스타일을 분리해서 관리합니다.</p></div><button className="primary"><Plus size={16}/> 계정 추가</button></div>
+    <div className="hero-row"><div><h1>Threads 계정 관리</h1><p>실제로 운영할 계정만 등록됩니다. 샘플 계정은 사용하지 않습니다.</p></div><div className="toolbar"><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button><button className="primary" onClick={onAdd}><Plus size={16}/> 계정 추가</button></div></div>
     <div className="panel">
-      <div className="search-row"><div className="search"><Search size={16}/><input placeholder="계정 검색"/></div><button className="ghost">운영중 <ChevronDown size={14}/></button></div>
-      <div className="account-list">{accounts.map(a=><div className="account-list-card" key={a.id}>
-        <div className="avatar xl">{a.accent}</div>
-        <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className="badge green">{a.status}</span></div><p>{a.persona}</p><div className="chips"><span>{a.sector}</span><span>하루 {a.daily}개</span><span>CTA 5%</span></div></div>
-        <button className="ghost">설정</button>
-      </div>)}</div>
+      <div className="search-row"><div className="search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="계정 검색"/></div></div>
+      {loading?<div className="loading-line"><Loader2 className="spin"/> 불러오는 중</div>:filtered.length===0?
+        <EmptyState title={accounts.length?"검색 결과가 없습니다.":"등록된 계정이 없습니다."} desc={accounts.length?"다른 검색어를 입력해보세요.":"계정 추가 버튼으로 첫 Threads 계정을 등록하세요."} action={!accounts.length?<button className="primary" onClick={onAdd}><Plus size={15}/> 계정 추가</button>:null}/>
+      :<div className="account-list">{filtered.map(a=><div className="account-list-card" key={a.id}>
+        <div className="avatar xl">{String(a.name||"?").slice(0,1)}</div>
+        <div className="grow"><div className="line-title"><b>{a.name}</b><span>{a.handle}</span><span className={`badge ${a.is_active?"green":"gray"}`}>{a.is_active?"운영중":"중지"}</span></div>
+        <p>{a.persona||"페르소나 미설정"}</p><div className="chips"><span>{a.sector||"섹터 미설정"}</span><span>하루 {a.daily_post_goal}개</span><span>CTA {a.cta_ratio}%</span></div></div>
+      </div>)}</div>}
     </div>
   </>;
 }
 
-function ContentSettings() {
-  const [selected,setSelected]=useState(accounts[0].id);
+function ContentSettings({accounts}){
+  const [selected,setSelected]=useState("");
+  useEffect(()=>{ if(!selected&&accounts[0]) setSelected(String(accounts[0].id)); },[accounts,selected]);
+  const a=accounts.find(x=>String(x.id)===selected);
   return <>
-    <div className="hero-row"><div><h1>콘텐츠 설정</h1><p>계정마다 다른 말투·길이·주제 비중·금지표현을 저장합니다.</p></div><button className="primary"><Save size={16}/> 저장</button></div>
+    <div className="hero-row"><div><h1>콘텐츠 설정</h1><p>등록된 계정의 현재 콘텐츠 프로필을 확인합니다. 세부 편집 기능은 다음 단계에서 연결합니다.</p></div></div>
+    {!a?<div className="panel"><EmptyState title="먼저 Threads 계정을 등록하세요." desc="계정별 페르소나와 품질 기준은 계정 등록 후 설정할 수 있습니다."/></div>:
     <div className="two-col">
       <div className="panel">
         <label>계정 선택</label>
-        <select value={selected} onChange={e=>setSelected(Number(e.target.value))}>{accounts.map(a=><option value={a.id} key={a.id}>{a.name}</option>)}</select>
+        <select value={selected} onChange={e=>setSelected(e.target.value)}>{accounts.map(x=><option key={x.id} value={x.id}>{x.name} ({x.handle})</option>)}</select>
         <div className="form-grid">
-          <div><label>주요 타깃</label><input value="40~60대 투자자" readOnly/></div>
-          <div><label>기본 톤</label><input value="차분함 · 신뢰감 · 쉬운 설명" readOnly/></div>
-          <div><label>기본 게시물 길이</label><select><option>중간 (180~420자)</option></select></div>
-          <div><label>하루 게시 목표</label><input value="5" readOnly/></div>
+          <div><label>주요 타깃</label><input value={a.target_audience||""} readOnly/></div>
+          <div><label>기본 톤</label><input value={a.tone||""} readOnly/></div>
+          <div><label>기본 게시물 길이</label><input value={`${a.min_chars||180}~${a.max_chars||420}자`} readOnly/></div>
+          <div><label>하루 게시 목표</label><input value={a.daily_post_goal||0} readOnly/></div>
         </div>
-        <label>핵심 주제</label>
-        <div className="topic-grid">{["국내주식","반도체","거시경제","환율","금리","수급","실적"].map(t=><span className="topic active" key={t}>{t}</span>)}</div>
+        <label>페르소나</label><textarea rows="6" value={a.persona||""} readOnly/>
       </div>
       <div className="panel">
-        <SectionTitle title="콘텐츠 비중"/>
-        {[["정보형",35],["후킹형",25],["댓글유도형",20],["뉴스해설형",15],["CTA",5]].map(([n,v])=><div className="ratio" key={n}><span>{n}</span><div><i style={{width:`${v*2}%`}}/></div><b>{v}%</b></div>)}
-        <label>금지 표현</label>
-        <textarea rows="5" value={"수익 보장\n무조건 오른다\n급등 확정\n원금 보장\n과도한 광고성 CTA"} readOnly/>
+        <SectionTitle title="품질 기준"/>
+        <div className="kv"><span>최소 검토 기준</span><b>{a.quality_threshold||80}점</b></div>
+        <div className="kv"><span>자동 예약 가능 기준</span><b>{a.auto_publish_threshold||90}점</b></div>
+        <div className="kv"><span>CTA 비율</span><b>{a.cta_ratio||0}%</b></div>
+        <label>콘텐츠 비중</label>
+        {Object.entries(a.type_mix||{}).length?Object.entries(a.type_mix).map(([n,v])=><div className="ratio" key={n}><span>{n}</span><div><i style={{width:`${Math.min(100,Number(v)*2)}%`}}/></div><b>{v}%</b></div>):<div className="muted">기본 프로필 생성 대기</div>}
       </div>
-    </div>
+    </div>}
   </>;
 }
 
-function QualityPanel({quality}) {
-  const icon = quality.status==="ready"?<CheckCircle2/>:quality.status==="review"?<AlertTriangle/>:<XCircle/>;
+function QualityPanel({quality}){
+  const icon=quality.status==="ready"?<CheckCircle2/>:quality.status==="review"?<AlertTriangle/>:<XCircle/>;
   return <div className={`quality-card ${quality.status}`}>
     <div className="quality-head"><div>{icon}<div><span>콘텐츠 품질 점수</span><strong>{quality.score}<small>/100</small></strong></div></div><span className="quality-status">{qualityLabel[quality.status]}</span></div>
     <div className="quality-metrics">{Object.entries(quality.metrics).map(([k,v])=><div key={k}><span>{({hook:"훅",readability:"가독성",substance:"정보량",engagement:"반응유도",naturalness:"자연스러움",duplicate:"중복안전",visual:"시각완성도",safety:"표현안전"})[k]}</span><b>{v}</b></div>)}</div>
@@ -188,52 +249,54 @@ function QualityPanel({quality}) {
   </div>;
 }
 
-function Writer() {
-  const [account,setAccount]=useState(accounts[0].id);
+function Writer({accounts,posts,onSaved}){
+  const [account,setAccount]=useState("");
   const [type,setType]=useState("후킹형");
   const [mediaMode,setMediaMode]=useState("text");
-  const [text,setText]=useState(sampleText);
+  const [text,setText]=useState("");
   const [image,setImage]=useState(null);
-  const quality=useMemo(()=>scorePost({text,mediaMode,hasImage:!!image,recentTexts:recentPosts.map(r=>r.title)}),[text,mediaMode,image]);
-  const canSchedule=quality.status!=="blocked";
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
 
-  function generate() {
-    setText(sampleText);
+  useEffect(()=>{ if(!account&&accounts[0]) setAccount(String(accounts[0].id)); },[accounts,account]);
+  const quality=useMemo(()=>scorePost({text,mediaMode,hasImage:!!image,recentTexts:posts.map(p=>p.body)}),[text,mediaMode,image,posts]);
+
+  async function saveDraft(){
+    if(!account||!text.trim()) return;
+    setSaving(true);setMessage("");
+    try{
+      await api("/api/posts",{method:"POST",body:JSON.stringify({
+        account_id:Number(account),post_type:type,media_mode:mediaMode,body:text,
+        quality_score:quality.score,quality_status:quality.status,quality_details:quality,status:"draft"
+      })});
+      setMessage("초안이 실제 DB에 저장되었습니다.");
+      await onSaved();
+    }catch{setMessage("저장에 실패했습니다.");}
+    finally{setSaving(false);}
   }
 
+  const selected=accounts.find(a=>String(a.id)===account);
+  if(accounts.length===0) return <><div className="hero-row"><div><h1>AI 게시물 생성</h1><p>계정별 콘텐츠 작성 공간입니다.</p></div></div><div className="panel"><EmptyState title="먼저 Threads 계정을 등록하세요." desc="등록 계정이 있어야 계정별 페르소나를 적용한 게시물을 만들 수 있습니다."/></div></>;
+
   return <>
-    <div className="hero-row"><div><h1>AI 게시물 생성</h1><p>자동화하되 저품질 게시물은 만들지 않습니다. 생성 후 품질 검사를 통과해야 예약할 수 있습니다.</p></div></div>
+    <div className="hero-row"><div><h1>AI 게시물 생성</h1><p>현재 단계에서는 실제 계정별 초안 작성·품질검사·DB 저장까지 연결되어 있습니다.</p></div></div>
     <div className="writer-grid">
       <div className="panel composer">
-        <div className="stepper"><span className="active">1 주제 선택</span><span>2 스타일 설정</span><span>3 생성 결과</span><span>4 검토 및 예약</span></div>
-        <label>계정 선택</label>
-        <select value={account} onChange={e=>setAccount(Number(e.target.value))}>{accounts.map(a=><option value={a.id} key={a.id}>{a.name} ({a.handle})</option>)}</select>
-        <label>콘텐츠 주제</label>
-        <select><option>반도체 / 삼성전자</option><option>미국 금리</option><option>BTC 수급</option></select>
-
-        <label>게시물 유형</label>
-        <div className="choice-row">{[["후킹형",WandSparkles],["정보형",FileText],["댓글유도형",MessageCircle],["뉴스해설형",Newspaper],["공감형",Heart]].map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
-
-        <label>게시 방식</label>
-        <div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
-
-        {mediaMode==="image"&&<label className="upload">
-          <input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/>
-          <UploadCloud size={24}/><b>{image?image.name:"이미지 업로드"}</b><span>뉴스카드·비교카드·차트이미지 등</span>
-        </label>}
-
-        <label>추가 키워드</label><input placeholder="HBM, AI, 외국인 수급"/>
-        <label>참고 뉴스 / 메모</label><textarea rows="4" placeholder="URL 또는 핵심 메모를 입력하면 게시물 생성 시 참고합니다."/>
-        <button className="generate" onClick={generate}><Sparkles size={17}/> AI 게시물 생성하기</button>
+        <label>계정 선택</label><select value={account} onChange={e=>setAccount(e.target.value)}>{accounts.map(a=><option key={a.id} value={a.id}>{a.name} ({a.handle})</option>)}</select>
+        <div className="account-context"><b>{selected?.name}</b><span>{selected?.persona||"페르소나 미설정"}</span></div>
+        <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
+        <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
+        {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 저장소 연결 전까지 품질 검사 용도로만 사용됩니다.</span></label>}
+        <label>게시물 본문</label><textarea rows="15" value={text} onChange={e=>setText(e.target.value)} placeholder="게시물 본문을 작성하세요. AI 자동생성 API는 다음 단계에서 이 입력란에 결과를 생성하도록 연결합니다."/>
+        <button className="generate" onClick={saveDraft} disabled={saving||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 품질검사 후 초안 저장</button>
+        {message&&<div className="save-message">{message}</div>}
       </div>
-
       <div className="right-stack">
         <div className="panel">
-          <SectionTitle title="생성된 게시물" action={<span className="tag">{type}</span>}/>
-          <div className="post-preview-head"><div className="avatar">🧭</div><div><b>{accounts.find(a=>a.id===account)?.name}</b><span>{accounts.find(a=>a.id===account)?.handle}</span></div></div>
-          <textarea className="post-editor" value={text} onChange={e=>setText(e.target.value)} />
-          {mediaMode==="image"&&<div className={image?"image-slot loaded":"image-slot"}>{image?<><ImageIcon/><span>{image.name}</span></>:<><ImageIcon/><span>이미지가 필요합니다.</span></>}</div>}
-          <div className="preview-actions"><button className="ghost">다른 버전</button><button className="ghost">수정 저장</button><button className="primary" disabled={!canSchedule}><CalendarDays size={15}/> 예약 등록</button></div>
+          <SectionTitle title="게시물 미리보기" action={<span className="tag">{type}</span>}/>
+          <div className="post-preview-head"><div className="avatar">{String(selected?.name||"?").slice(0,1)}</div><div><b>{selected?.name}</b><span>{selected?.handle}</span></div></div>
+          <div className="post-live-preview">{text||<span className="muted">작성한 본문이 여기에 표시됩니다.</span>}</div>
+          {mediaMode==="image"&&<div className={image?"image-slot loaded":"image-slot"}><ImageIcon/><span>{image?image.name:"이미지가 필요합니다."}</span></div>}
         </div>
         <QualityPanel quality={quality}/>
       </div>
@@ -241,37 +304,100 @@ function Writer() {
   </>;
 }
 
-function Scheduler() {
-  return <><div className="hero-row"><div><h1>게시 스케줄러</h1><p>계정별 게시 시간과 상태를 한 화면에서 관리합니다.</p></div><button className="primary"><Plus size={16}/> 일정 추가</button></div><div className="panel"><div className="table-wrap"><table><thead><tr><th>시간</th><th>계정</th><th>주제</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>{schedules.map((r,i)=><tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td><span className="tag">{r[3]}</span></td><td><StatusBadge>{r[4]}</StatusBadge></td><td>{i<3?<span className="score good">92</span>:<span className="score">86</span>}</td></tr>)}</tbody></table></div></div></>;
+function Scheduler({schedules}){
+  return <>
+    <div className="hero-row"><div><h1>게시 스케줄러</h1><p>실제 DB에 저장된 예약 일정만 표시됩니다.</p></div></div>
+    <div className="panel">{schedules.length===0?<EmptyState title="예약된 게시물이 없습니다." desc="게시물 초안의 예약 기능을 연결하면 여기에 일정이 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>게시물</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>
+      {schedules.map(s=><tr key={s.id}><td>{fmtDate(s.scheduled_at)}</td><td>{s.account_name}</td><td className="text-cell">{s.body}</td><td><span className="tag">{s.post_type}</span></td><td><StatusBadge>{s.status}</StatusBadge></td><td>{s.quality_score??"-"}</td></tr>)}
+    </tbody></table></div>}</div>
+  </>;
 }
 
-function Placeholder({title,desc}) {
-  return <div className="panel placeholder"><ShieldCheck size={42}/><h1>{title}</h1><p>{desc}</p><button className="ghost">MVP 연결 준비중</button></div>;
+function HistoryPage({posts}){
+  return <><div className="hero-row"><div><h1>게시 이력</h1><p>DB에 저장된 실제 게시물 초안과 게시 상태입니다.</p></div></div><div className="panel">
+    {posts.length===0?<EmptyState title="게시 이력이 없습니다." desc="첫 게시물을 저장하면 여기에 나타납니다."/>:<div className="table-wrap"><table><thead><tr><th>생성일</th><th>계정</th><th>본문</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>
+      {posts.map(p=><tr key={p.id}><td>{fmtDate(p.created_at)}</td><td>{p.account_name}</td><td className="text-cell">{p.body}</td><td>{p.post_type}</td><td><StatusBadge>{p.status}</StatusBadge></td><td>{p.quality_score??"-"}</td></tr>)}
+    </tbody></table></div>}</div></>;
 }
 
-export default function App() {
+function Analytics({data}){
+  const t=data?.totals||{};
+  return <><div className="hero-row"><div><h1>성과 분석</h1><p>샘플 수치 없이 실제 집계값만 표시합니다.</p></div></div>
+    <div className="stats"><Stat icon={Eye} label="전체 조회수" value={t.views}/><Stat icon={UserRound} label="프로필 방문" value={t.profile_visits}/><Stat icon={MousePointerClick} label="봇 진입" value={t.bot_entries}/><Stat icon={ClipboardCheck} label="신청 완료" value={t.applications}/></div>
+    <div className="panel"><EmptyState title="성과 데이터 수집 준비 완료" desc="Threads 게시/인사이트 연동 후 게시물별 조회·반응·전환 그래프를 이 영역에 표시합니다."/></div>
+  </>;
+}
+
+function Leads({leads,onRefresh}){
+  return <><div className="hero-row"><div><h1>텔레그램 신청 관리</h1><p>Telegram 신청봇에서 저장된 실제 신청자만 표시합니다.</p></div><button className="ghost" onClick={onRefresh}><RefreshCw size={15}/> 새로고침</button></div>
+    <div className="panel">{leads.length===0?<EmptyState title="아직 접수된 신청이 없습니다." desc="Telegram 신청봇 저장 연동 후 실제 신청자가 여기에 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>신청일</th><th>이름</th><th>Telegram</th><th>연령</th><th>관심분야</th><th>경험</th><th>유입코드</th><th>상태</th></tr></thead><tbody>
+      {leads.map(l=><tr key={l.id}><td>{fmtDate(l.created_at)}</td><td>{l.display_name||"-"}</td><td>{l.telegram_username||l.telegram_user_id}</td><td>{l.age_group||"-"}</td><td>{l.interest||"-"}</td><td>{l.experience||"-"}</td><td>{l.source_code||"-"}</td><td><StatusBadge>{l.status}</StatusBadge></td></tr>)}
+    </tbody></table></div>}</div>
+  </>;
+}
+
+function SettingsPage(){
+  return <><div className="hero-row"><div><h1>설정</h1><p>ROADER 운영 연결 상태입니다.</p></div></div><div className="panel settings-list">
+    <div><b>Vercel Production</b><span className="badge green">연결됨</span></div>
+    <div><b>Neon Postgres</b><span className="badge green">연결됨</span></div>
+    <div><b>Threads API</b><span className="badge gray">연결 전</span></div>
+    <div><b>AI 생성 API</b><span className="badge gray">연결 전</span></div>
+    <div><b>Vercel Blob 이미지 저장</b><span className="badge gray">연결 전</span></div>
+    <div><b>Telegram 신청 DB 저장</b><span className="badge gray">연결 예정</span></div>
+  </div></>;
+}
+
+export default function App(){
   const [page,setPage]=useState("dashboard");
-  const pageNode = {
-    dashboard:<Dashboard onCreate={()=>setPage("writer")}/>,
-    accounts:<Accounts/>,
-    content:<ContentSettings/>,
-    writer:<Writer/>,
-    scheduler:<Scheduler/>,
-    history:<Placeholder title="게시 이력" desc="게시 완료/실패/수정 이력을 계정별로 추적할 영역입니다."/>,
-    analytics:<Placeholder title="성과 분석" desc="조회 → 프로필 방문 → 봇 진입 → 신청 완료까지 전환 성과를 연결합니다."/>,
-    leads:<Placeholder title="텔레그램 신청 관리" desc="ROADER Telegram 신청봇과 연결해 유입 게시물별 신청자를 관리합니다."/>,
-    settings:<Placeholder title="설정" desc="API 연동, 관리자 권한, 기본 품질 기준을 관리합니다."/>
+  const [dashboard,setDashboard]=useState({totals:{},accounts:[],schedules:[],posts:[],leads:{}});
+  const [accounts,setAccounts]=useState([]);
+  const [posts,setPosts]=useState([]);
+  const [schedules,setSchedules]=useState([]);
+  const [leads,setLeads]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [modal,setModal]=useState(false);
+  const [error,setError]=useState("");
+
+  async function loadAll(){
+    setLoading(true);setError("");
+    try{
+      const [d,a,p,s,l]=await Promise.all([
+        api("/api/dashboard"),api("/api/accounts"),api("/api/posts"),api("/api/schedules"),api("/api/leads")
+      ]);
+      setDashboard(d);setAccounts(a.accounts||[]);setPosts(p.posts||[]);setSchedules(s.schedules||[]);setLeads(l.leads||[]);
+    }catch(e){
+      setError("실제 DB 데이터를 불러오지 못했습니다. 배포/DB 연결 상태를 확인해주세요.");
+    }finally{setLoading(false);}
+  }
+
+  useEffect(()=>{loadAll();},[]);
+
+  const pageNode={
+    dashboard:<Dashboard data={dashboard} loading={loading} onRefresh={loadAll} onCreate={()=>setPage("writer")} onAddAccount={()=>setModal(true)}/>,
+    accounts:<Accounts accounts={accounts} loading={loading} onAdd={()=>setModal(true)} onRefresh={loadAll}/>,
+    content:<ContentSettings accounts={accounts}/>,
+    writer:<Writer accounts={accounts} posts={posts} onSaved={loadAll}/>,
+    scheduler:<Scheduler schedules={schedules}/>,
+    history:<HistoryPage posts={posts}/>,
+    analytics:<Analytics data={dashboard}/>,
+    leads:<Leads leads={leads} onRefresh={loadAll}/>,
+    settings:<SettingsPage/>
   }[page];
+
+  const views=Number(dashboard?.totals?.views||0);
+  const pct=Math.min(100,Math.round(views/1000));
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">R</div><div><strong>ROADER</strong><span>Threads Content & Lead Automation</span></div></div>
       <nav>{navItems.map(([Icon,label,key])=><button key={key} className={page===key?"active":""} onClick={()=>setPage(key)}><Icon size={19}/><span>{label}</span></button>)}</nav>
-      <div className="sidebar-goal"><span>이번 달 목표</span><strong>100,000 <small>노출</small></strong><div><i style={{width:"42.36%"}}/></div><small>42,360 (42%)</small></div>
+      <div className="sidebar-goal"><span>이번 달 목표</span><strong>100,000 <small>노출</small></strong><div><i style={{width:`${pct}%`}}/></div><small>{fmt(views)} ({pct}%)</small></div>
     </aside>
     <main>
-      <header><div className="date-pill">2026. 10. 05 (월)</div><div className="admin"><div>●</div><span>관리자</span><ChevronDown size={14}/></div></header>
+      <header><div className="date-pill">{new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short"}).format(new Date())}</div><div className="admin"><div>●</div><span>관리자</span><ChevronDown size={14}/></div></header>
+      {error&&<div className="global-error">{error}</div>}
       <div className="content">{pageNode}</div>
     </main>
+    <AccountModal open={modal} onClose={()=>setModal(false)} onSaved={loadAll}/>
   </div>;
 }

@@ -442,7 +442,7 @@ function StyleLearning({accounts,onRefresh}){
       const r=await api("/api/style-learning",{method:"POST",body:JSON.stringify({
         action:"learn",account_id:Number(account),source_handle:sourceHandle.trim(),label:label.trim(),samples
       })});
-      setMessage(`학습 완료 · 신규 샘플 ${r.inserted}개 · 신뢰도 ${r.confidence}%`);
+      setMessage(`최근 스타일 학습 완료 · 신규 샘플 ${r.inserted}개 · 신뢰도 ${r.confidence}%`);
       setSamplesText("");
       await load(account);
       await onRefresh();
@@ -458,7 +458,7 @@ function StyleLearning({accounts,onRefresh}){
   if(accounts.length===0) return <><div className="hero-row"><div><h1>스타일 학습</h1><p>참고 Threads 계정의 게시 패턴을 계정별 스타일 프로필로 저장합니다.</p></div></div><div className="panel"><EmptyState title="먼저 운영 계정을 등록하세요." desc="스타일 학습은 등록된 ROADER 계정별로 적용됩니다."/></div></>;
 
   return <>
-    <div className="hero-row"><div><h1>스타일 학습</h1><p>참고 계정의 문장을 복제하지 않고, 반복적으로 나타나는 작성 패턴만 추출해 저장합니다.</p></div><button className="ghost" onClick={()=>load()}><RefreshCw size={15}/> 새로고침</button></div>
+    <div className="hero-row"><div><h1>스타일 학습</h1><p>참고 계정의 최근 게시물 5~10개에서 현재 작성 패턴만 추출해 계정별 스타일로 저장합니다.</p></div><button className="ghost" onClick={()=>load()}><RefreshCw size={15}/> 새로고침</button></div>
 
     <div className="two-col">
       <div className="panel">
@@ -476,18 +476,26 @@ function StyleLearning({accounts,onRefresh}){
           <div><label>메모</label><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="참고 계정 용도 메모"/></div>
         </div>
 
-        <div className={`integration-strip ${selected?.threads_user_id?"ready":"waiting"}`}>
-          <div><b>Threads 공개 프로필 자동 수집</b><span>{selected?.threads_user_id?`연결 계정 ${selected.threads_username||selected.handle} 토큰 사용`:"선택한 ROADER 계정의 Threads 연결 필요"}</span></div>
-          <span className={`badge ${selected?.threads_user_id?"green":"gray"}`}>{selected?.threads_user_id?"연결됨":"미연결"}</span>
+        <div className="learning-note">
+          <b>최근 게시물 5~10개만 넣어주세요.</b><br/>
+          오래된 게시물까지 섞기보다 최근 작성물을 기준으로 학습하면 현재 말투 · 문장 길이 · 훅 · 줄바꿈 · 마무리 패턴을 더 정확하게 반영합니다.
         </div>
-        <button className="generate secondary-generate" onClick={autoFetch} disabled={loading||!sourceHandle.trim()||!selected?.threads_user_id}>{loading?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} 이 계정 게시물 자동 가져오기 + 학습</button>
 
-        <div className="or-divider"><span>또는 직접 샘플 입력</span></div>
+        <label>최근 게시물 샘플 *</label>
+        <textarea rows="14" value={samplesText} onChange={e=>setSamplesText(e.target.value)} placeholder={"최근 게시물 원문을 5~10개 붙여넣으세요.\n\n게시물과 게시물 사이에는 아래 구분자를 넣어주세요.\n===POST===\n\n예시)\n첫 번째 게시물 원문\n===POST===\n두 번째 게시물 원문"}/>
+        <div className="learning-note">권장: 최근 게시물 5~10개 · 최소 3개 이상. 원문 내용 자체를 복제하지 않고 반복되는 작성 패턴만 추출합니다.</div>
+        <button className="generate" onClick={learn} disabled={loading}>{loading?<Loader2 className="spin" size={17}/>:<BrainCircuit size={17}/>} 최근 게시물 스타일 학습</button>
 
-        <label>게시물 샘플</label>
-        <textarea rows="12" value={samplesText} onChange={e=>setSamplesText(e.target.value)} placeholder={"게시물 원문을 붙여넣으세요.\n\n여러 게시물을 넣을 때는 게시물 사이에\n===POST===\n를 넣어 구분하세요."}/>
-        <div className="learning-note">자동 수집이 아직 연결되지 않았거나, 특정 게시물만 학습시키고 싶을 때 사용하세요. 권장 샘플은 20~50개입니다.</div>
-        <button className="generate" onClick={learn} disabled={loading}>{loading?<Loader2 className="spin" size={17}/>:<BrainCircuit size={17}/>} 직접 샘플 분석 및 학습</button>
+        <details style={{marginTop:14}}>
+          <summary style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"#64748b"}}>실험 기능 · Threads 공개 프로필 자동 수집</summary>
+          <div style={{marginTop:10}}>
+            <div className={`integration-strip ${selected?.threads_user_id?"ready":"waiting"}`}>
+              <div><b>Threads 공개 프로필 자동 수집</b><span>{selected?.threads_user_id?`연결 계정 ${selected.threads_username||selected.handle} 토큰 사용`:"선택한 ROADER 계정의 Threads 연결 필요"}</span></div>
+              <span className={`badge ${selected?.threads_user_id?"green":"gray"}`}>{selected?.threads_user_id?"연결됨":"미연결"}</span>
+            </div>
+            <button className="generate secondary-generate" onClick={autoFetch} disabled={loading||!sourceHandle.trim()||!selected?.threads_user_id}>{loading?<Loader2 className="spin" size={17}/>:<RefreshCw size={17}/>} 자동 가져오기 + 학습</button>
+          </div>
+        </details>
         {message&&<div className="save-message">{message}</div>}
       </div>
 

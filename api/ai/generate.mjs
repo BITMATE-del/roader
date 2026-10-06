@@ -82,6 +82,98 @@ function formatMobileText(value){
   return paragraphs.join("\n\n").replace(/\n{3,}/g,"\n\n").trim();
 }
 
+
+function normalizeTicker(v){
+  return String(v||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
+}
+
+async function fetchUpbitKrwTicker(symbol){
+  const s=normalizeTicker(symbol);
+  if(!s) return null;
+  try{
+    const r=await fetch("https://api.upbit.com/v1/ticker?markets=KRW-"+encodeURIComponent(s),{
+      headers:{"accept":"application/json"}
+    });
+    if(!r.ok) return null;
+    const rows=await r.json().catch(()=>[]);
+    const t=Array.isArray(rows)?rows[0]:null;
+    if(!t) return null;
+    return {
+      market:t.market,
+      symbol:s,
+      trade_price:Number(t.trade_price),
+      high_price:Number(t.high_price),
+      low_price:Number(t.low_price),
+      opening_price:Number(t.opening_price),
+      signed_change_price:Number(t.signed_change_price),
+      signed_change_rate:Number(t.signed_change_rate),
+      acc_trade_price_24h:Number(t.acc_trade_price_24h),
+      timestamp:Number(t.timestamp)
+    };
+  }catch{
+    return null;
+  }
+}
+
+async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,live}){
+  const correctionContext={
+    ...context,
+    selected_topic:parsed.selected_topic||"",
+    selected_symbol:parsed.symbol||live.symbol,
+    authoritative_live_market_data:{
+      source:"UPBIT public ticker API",
+      market:live.market,
+      current_price_krw:live.trade_price,
+      day_high_krw:live.high_price,
+      day_low_krw:live.low_price,
+      opening_price_krw:live.opening_price,
+      change_price_krw:live.signed_change_price,
+      change_rate_percent:Number((live.signed_change_rate*100).toFixed(2)),
+      timestamp_ms:live.timestamp
+    },
+    correction_rule:"현재가·당일 고가·당일 저가·등락률은 위 UPBIT 실시간 값만 사용하고, 웹검색의 오래된 가격 숫자는 현재가처럼 쓰지 않는다."
+  };
+
+  const r=await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "authorization":`Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body:JSON.stringify({
+      model,
+      reasoning:{effort:"low"},
+      instructions:instructions+"\n코인 가격 숫자는 입력된 authoritative_live_market_data를 최우선으로 사용한다. 현재가를 임의로 추정하거나 웹검색 값으로 덮어쓰지 않는다.",
+      input:JSON.stringify(correctionContext),
+      tools:[{type:"web_search",search_context_size:"medium"}],
+      tool_choice:"auto",
+      text:{
+        format:{
+          type:"json_schema",
+          name:"roader_threads_draft_corrected",
+          strict:true,
+          schema:{
+            type:"object",
+            additionalProperties:false,
+            properties:{
+              selected_topic:{type:"string"},
+              symbol:{type:"string"},
+              body:{type:"string"},
+              reply:{type:"string"}
+            },
+            required:["selected_topic","symbol","body","reply"]
+          }
+        }
+      }
+    })
+  });
+
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) return null;
+  const output=extractOutputText(data);
+  try{return JSON.parse(output);}catch{return null;}
+}
+
 export default async function handler(req,res){
   try{
     if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
@@ -151,6 +243,7 @@ export default async function handler(req,res){
       "광고처럼 과장하지 말고 정보 계정의 자연스러운 추가 안내처럼 작성한다.",
       "마크다운 굵게(**), 제목 기호(#), 과도한 이모지와 불릿은 사용하지 않는다.",
       "최종 출력은 지정된 JSON 스키마만 반환한다.",
+      "코인 소재라면 symbol 필드에는 거래소에서 사용하는 영문 티커만 넣는다. 예: ORCA, ADA, SOL. 코인 소재가 아니면 빈 문자열로 둔다.",
       ...(isCrypto ? [
         "이 계정은 코인 전용 전망 계정이다. 단순 뉴스 요약이 아니라 '현재 가격이 어디쯤이고, 앞으로 어떻게 볼 것인지'까지 설명해야 한다.",
         "비트코인을 습관적으로 첫 소재로 선택하지 않는다. 최근 24~72시간 코인 시장에서 실제로 관심이 증가한 종목·테마 후보를 여러 개 찾고, 가격과 전망을 설명할 가치가 높은 소재를 고른다.",
@@ -224,10 +317,11 @@ export default async function handler(req,res){
               additionalProperties:false,
               properties:{
                 selected_topic:{type:"string"},
+                symbol:{type:"string"},
                 body:{type:"string"},
                 reply:{type:"string"}
               },
-              required:["selected_topic","body","reply"]
+              required:["selected_topic","symbol","body","reply"]
             }
           }
         }
@@ -249,11 +343,22 @@ export default async function handler(req,res){
       return res.status(502).json({ok:false,error:"generation_failed",details:"AI 응답 형식을 읽지 못했습니다."});
     }
 
+    let liveMarket=null;
+    if(isCrypto){
+      liveMarket=await fetchUpbitKrwTicker(parsed.symbol);
+      if(liveMarket){
+        const corrected=await regenerateCryptoWithLivePrice({model,instructions,context,parsed,live:liveMarket});
+        if(corrected) parsed=corrected;
+      }
+    }
+
     return res.status(200).json({
       ok:true,
       selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
+      symbol:normalizeTicker(parsed.symbol||""),
       body:formatMobileText(parsed.body||""),
       reply:formatMobileText(parsed.reply||""),
+      live_market:liveMarket,
       model
     });
   }catch(error){

@@ -324,15 +324,39 @@ function hardFitThreadsText(value,maxChars){
   if(unicodeLength(text)<=maxChars) return text;
 
   const paragraphs=text.split(/\n{2,}/).map(v=>v.trim()).filter(Boolean);
-  const kept=[];
-  for(const p of paragraphs){
-    const candidate=[...kept,p].join("\n\n");
+  if(!paragraphs.length) return Array.from(text).slice(0,maxChars).join("").trim();
+
+  const first=paragraphs[0];
+  const last=paragraphs[paragraphs.length-1];
+  const mustKeepLast=/[?？]|여러분|어떻게|생각|→\s*[12]/.test(last);
+
+  const kept=[first];
+  const middle=paragraphs.slice(1,mustKeepLast?-1:undefined);
+
+  for(const p of middle){
+    const tail=mustKeepLast?last:"";
+    const candidate=[...kept,p,...(tail?[tail]:[])].join("\n\n");
     if(unicodeLength(candidate)<=maxChars) kept.push(p);
     else break;
   }
-  if(kept.length) return kept.join("\n\n");
 
-  return Array.from(text).slice(0,maxChars).join("").trim();
+  if(mustKeepLast){
+    let candidate=[...kept,last].join("\n\n");
+    if(unicodeLength(candidate)<=maxChars) return candidate;
+
+    const budget=Math.max(0,maxChars-unicodeLength(first)-unicodeLength(last)-4);
+    if(budget>40 && middle.length){
+      const compactMiddle=Array.from(middle.join(" ")).slice(0,budget).join("").trim();
+      candidate=[first,compactMiddle,last].filter(Boolean).join("\n\n");
+      if(unicodeLength(candidate)<=maxChars) return candidate;
+    }
+
+    const firstBudget=Math.max(40,maxChars-unicodeLength(last)-2);
+    const shortFirst=Array.from(first).slice(0,firstBudget).join("").trim();
+    return [shortFirst,last].join("\n\n");
+  }
+
+  return kept.join("\n\n") || Array.from(text).slice(0,maxChars).join("").trim();
 }
 
 

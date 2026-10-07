@@ -65,13 +65,13 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   const lines = lineStats(trimmed);
   const firstLine = lines.lines[0] || "";
   const lastParagraph = paragraphs.blocks[paragraphs.blocks.length - 1] || "";
-  const hasQuestion = /[?？]|궁금|어디|어떻게|어떤 이유|선택/.test(lastParagraph);
+  const hasQuestion = /[?？]|궁금|어디|어떻게|어떤 이유|선택|여러분|생각/.test(lastParagraph);
   const banned = bannedPatterns.filter(r => r.test(trimmed)).map(r => r.source);
   const aiTickHits = aiTics.filter(t => trimmed.includes(t)).length;
 
   let hook = 45;
   if (firstLine.length >= 8 && firstLine.length <= 38) hook += 25;
-  if (/지금|오늘|하나만|vs|왜|체크|먼저|기준/.test(firstLine)) hook += 20;
+  if (/지금|오늘|하나만|vs|왜|체크|먼저|기준|돌파|지지|저항|이탈|핵심|가격대/.test(firstLine)) hook += 20;
   if (firstLine.length > 72) hook -= 20;
   hook = clamp(hook);
 
@@ -90,13 +90,15 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   let substance = 35;
   if (chars >= 120) substance += 20;
   if (chars >= 180) substance += 15;
-  if (/이유|때문|기준|수요|실적|금리|수급|흐름|시장|리스크|반면|모멘텀|업황/.test(trimmed)) substance += 20;
+  if (/이유|때문|기준|수요|실적|금리|수급|흐름|시장|리스크|반면|모멘텀|업황|현재가|가격|가격대|지지|저항|돌파|이탈|거래량|RSI|EMA|ETF|온체인|언락|고점|저점|조정|반등/.test(trimmed)) substance += 20;
+  if (/\d[\d,]*원/.test(trimmed) && /(돌파|지지|저항|이탈)/.test(trimmed) && /(가능성|재확인|조정|상승|반등)/.test(trimmed)) substance += 10;
   if (chars < 70) substance -= 30;
   substance = clamp(substance);
 
   let engagement = 45;
   if (hasQuestion) engagement += 30;
-  if (/vs|선택|여러분|생각|의견/.test(trimmed)) engagement += 15;
+  if (/vs|선택|여러분|생각|의견|→\s*1|→\s*2|1번|2번/.test(trimmed)) engagement += 15;
+  if (/(돌파|지지).{0,40}→\s*1/.test(trimmed) && /(이탈|조정).{0,40}→\s*2/.test(trimmed)) engagement += 10;
   engagement = clamp(engagement);
 
   let naturalness = 88 - aiTickHits * 8;

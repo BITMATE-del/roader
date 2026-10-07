@@ -12,7 +12,21 @@ const aiTics = [
   "주목해야 할 점은",
   "중요한 것은 바로",
   "단순히 ~가 아니라",
-  "여러분은 어떻게 생각하시나요?"
+  "여러분은 어떻게 생각하시나요?",
+  "여러분은 어떻게 보시나요?",
+  "여러분 생각은 어떠신가요?",
+  "제가 보는 핵심은",
+  "지금 제가 보는 건",
+  "확인할 만합니다",
+  "확인할 만해요",
+  "이어질 수 있다고 봅니다",
+  "이어질 가능성이 있습니다",
+  "긍정적으로 작용할 수 있습니다",
+  "살펴볼 필요가 있습니다",
+  "체크해볼 만합니다",
+  "체크해볼 구간입니다",
+  "라고 봅니다",
+  "보입니다"
 ];
 
 function clamp(value, min = 0, max = 100) {
@@ -101,7 +115,7 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   if (/(돌파|지지).{0,40}→\s*1/.test(trimmed) && /(이탈|조정).{0,40}→\s*2/.test(trimmed)) engagement += 10;
   engagement = clamp(engagement);
 
-  let naturalness = 88 - aiTickHits * 8;
+  let naturalness = 92 - aiTickHits * 14;
   if (paragraphs.count >= 4) naturalness += 5;
   if (/첫째|둘째|셋째/.test(trimmed) && chars < 220) naturalness -= 8;
   naturalness = clamp(naturalness);
@@ -138,6 +152,7 @@ export function scorePost({ text = "", mediaMode = "text", hasImage = false, rec
   if (substance < 55) blockers.push("근거 또는 설명이 지나치게 부족합니다.");
   if (banned.length) blockers.push("과장·수익 보장성 표현이 감지되었습니다.");
   if (duplicate < 60) blockers.push("최근 게시물과 도입부가 지나치게 유사합니다.");
+  if (aiTickHits >= 2) blockers.push("AI·번역·보고서형 상투 표현이 반복됩니다. 한국인이 직접 쓴 자연스러운 문장으로 다시 작성하세요.");
   if (mediaMode === "image" && !hasImage) blockers.push("이미지형 게시물에는 이미지가 필요합니다.");
 
   // 아래 항목은 자동 포맷 보정이 가능한 문제이므로 게시 차단이 아니라 warnings로 처리한다.

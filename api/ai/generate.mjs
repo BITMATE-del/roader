@@ -233,10 +233,8 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
     body:JSON.stringify({
       model,
       reasoning:{effort:"low"},
-      instructions:instructions+"\n코인 가격 숫자는 입력된 authoritative_live_market_data와 technical_analysis의 KRW 값만 사용한다. 현재가·지지·저항·가격 구간에 달러/USDT 숫자를 쓰지 않는다. 웹검색은 이슈 확인에만 사용하고 가격 숫자는 웹검색 값으로 덮어쓰지 않는다.",
+      instructions:instructions+"\n코인 가격 숫자는 입력된 authoritative_live_market_data와 technical_analysis의 KRW 값만 사용한다. 현재가·지지·저항·가격 구간에 달러/USDT 숫자를 쓰지 않는다. 첫 생성에서 이미 확인한 이슈와 selected_topic을 유지하고 새 웹검색은 하지 않는다. 같은 종결어미 반복 없이 최종 문장을 완성한다.",
       input:JSON.stringify(correctionContext),
-      tools:[{type:"web_search",search_context_size:"medium"}],
-      tool_choice:"auto",
       text:{
         format:{
           type:"json_schema",
@@ -479,7 +477,16 @@ export default async function handler(req,res){
       "프로필 CTA는 너무 딱딱하게 '확인하세요'로 끝내지 말고 '무료로 확인해보셔도 됩니다', '무료 정보 한번 받아가셔도 됩니다'처럼 자연스럽고 부드럽게 마무리한다.",
       "광고처럼 과장하지 말고 정보 계정의 자연스러운 추가 안내처럼 작성한다.",
       "마크다운 굵게(**), 제목 기호(#), 과도한 이모지와 불릿은 사용하지 않는다.",
-      "Threads 본문은 반드시 470자 이하로 작성한다. 첫 댓글은 반드시 300자 이하로 작성한다. 제한을 넘길 것 같으면 반복 설명과 군더더기를 줄이고 핵심만 남긴다.",
+      "Threads 본문은 380~460자를 목표로 하고 절대 470자를 넘기지 않는다. 첫 댓글은 180~280자를 목표로 하고 300자를 넘기지 않는다.",
+      "ROADER 품질검사를 첫 생성부터 통과하도록 최종 출력 전에 아래 기준을 스스로 점검한다.",
+      "품질 기준: 첫 줄은 8~38자 정도의 강한 훅이며 지금/오늘/핵심/돌파/지지/저항/기준/먼저 같은 관점 신호를 자연스럽게 사용한다.",
+      "품질 기준: 본문은 5~7개 문단, 한 문단 최대 1~2문장, 문단 사이 빈 줄을 둔다.",
+      "품질 기준: 이유·근거·기준이 분명해야 한다. 코인 글은 현재 원화 가격과 지지/저항 또는 돌파/이탈 조건을 포함하고, 거래량·RSI·EMA·최근 이슈 중 실제 확인된 근거를 추가한다.",
+      "품질 기준: 마지막 문단은 독자의 의견을 자연스럽게 묻는다. 코인 글은 가능하면 '여러분은 어떻게 보시나요?'와 1/2 선택지를 함께 사용한다.",
+      "품질 기준: 같은 종결어미를 3문장 연속 반복하지 않고 실제 투자자가 말하는 자연스러운 문장 리듬을 만든다.",
+      "품질 기준: 최근 게시물과 첫 문장·주제·핵심 논지가 겹치지 않는다.",
+      "품질 기준: 수익보장·무조건 상승·100%·급등 확정 표현은 사용하지 않는다.",
+      "위 기준을 하나라도 어기면 JSON을 출력하기 전에 스스로 수정한다.",
       "exclude_topics에 있는 오늘의 주제와 겹치는 소재는 선택하지 않는다.",
       "최종 출력은 지정된 JSON 스키마만 반환한다.",
       "코인 소재라면 symbol 필드에는 거래소에서 사용하는 영문 티커만 넣는다. 예: ORCA, ADA, SOL. 코인 소재가 아니면 빈 문자열로 둔다.",
@@ -618,33 +625,8 @@ export default async function handler(req,res){
     let finalBody=formatMobileText(parsed.body||"");
     let finalReply=formatMobileText(parsed.reply||"");
 
-    if(isCrypto){
-      const polished=await polishCryptoTone({
-        model,
-        body:finalBody,
-        reply:finalReply
-      });
-      if(polished){
-        finalBody=formatMobileText(polished.body||finalBody);
-        finalReply=formatMobileText(polished.reply||finalReply);
-      }
-    }
-
-    if(unicodeLength(finalBody)>470 || unicodeLength(finalReply)>300){
-      const compressed=await compressThreadsDraft({
-        model,
-        body:finalBody,
-        reply:finalReply,
-        isCrypto
-      });
-      if(compressed){
-        finalBody=formatMobileText(compressed.body||finalBody);
-        finalReply=formatMobileText(compressed.reply||finalReply);
-      }
-    }
-
-    finalBody=hardFitThreadsText(finalBody,490);
-    finalReply=hardFitThreadsText(finalReply,490);
+    finalBody=hardFitThreadsText(finalBody,470);
+    finalReply=hardFitThreadsText(finalReply,300);
 
     return res.status(200).json({
       ok:true,

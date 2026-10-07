@@ -95,46 +95,86 @@ async function finishRun(sql,id,patch){
 }
 
 async function generatePassingDraft({origin,account,postType,recentTexts,excludeTopics,threshold}){
-  let lastQuality=null,lastError=null,lastDraft=null;
-  const used=new Set(excludeTopics.map(normalizeTopic));
+  let draft=null;
+  let quality=null;
 
-  for(let attempt=1;attempt<=6;attempt++){
-    try{
-      const draft=await callJson(origin+"/api/ai/generate",{
-        method:"POST",
-        body:JSON.stringify({
-          account_id:Number(account.id),
-          post_type:postType,
-          topic:"",
-          exclude_topics:excludeTopics
-        })
-      });
-      lastDraft=draft;
-      const topic=String(draft.selected_topic||"").trim();
-      const duplicateTopic=topic && used.has(normalizeTopic(topic));
-
-      const quality=scorePost({
-        text:String(draft.body||""),
-        mediaMode:"text",
-        hasImage:false,
-        recentTexts
-      });
-      lastQuality=quality;
-
-      if(!duplicateTopic && quality.status!=="blocked" && quality.score>=threshold){
-        return {draft,quality,attempt};
-      }
-
-      if(topic&&!duplicateTopic){
-        excludeTopics.push(topic);
-        used.add(normalizeTopic(topic));
-      }
-    }catch(e){
-      lastError=e;
-    }
+  try{
+    draft=await callJson(origin+"/api/ai/generate",{
+      method:"POST",
+      body:JSON.stringify({
+        account_id:Number(account.id),
+        post_type:postType,
+        topic:"",
+        exclude_topics:excludeTopics
+      })
+    });
+  }catch(error){
+    return {failed:true,error,attempt:1,quality:null,draft:null};
   }
 
-  return {draft:lastDraft,quality:lastQuality,attempt:6,error:lastError,failed:true};
+  const normalizedExcluded=new Set(excludeTopics.map(normalizeTopic));
+  const selectedTopic=String(draft.selected_topic||"").trim();
+  if(selectedTopic && normalizedExcluded.has(normalizeTopic(selectedTopic))){
+    return {
+      failed:true,
+      error:new Error("duplicate_topic"),
+      attempt:1,
+      quality:null,
+      draft
+    };
+  }
+
+  quality=scorePost({
+    text:String(draft.body||""),
+    mediaMode:"text",
+    hasImage:false,
+    recentTexts
+  });
+
+  if(quality.status!=="blocked" && quality.score>=threshold){
+    return {draft,quality,attempt:1};
+  }
+
+  try{
+    const repaired=await callJson(origin+"/api/ai/repair",{
+      method:"POST",
+      body:JSON.stringify({
+        body:String(draft.body||""),
+        reply:String(draft.reply||""),
+        blockers:quality.blockers||[],
+        metrics:quality.metrics||{},
+        is_crypto:/코인|crypto|가상자산|암호화폐/i.test(String(account.sector||""))
+      })
+    });
+
+    const repairedDraft={...draft,body:repaired.body||draft.body,reply:repaired.reply||draft.reply};
+    const repairedQuality=scorePost({
+      text:String(repairedDraft.body||""),
+      mediaMode:"text",
+      hasImage:false,
+      recentTexts
+    });
+
+    if(repairedQuality.status!=="blocked" && repairedQuality.score>=threshold){
+      return {draft:repairedDraft,quality:repairedQuality,attempt:2};
+    }
+
+    return {
+      failed:true,
+      error:new Error("quality_below_threshold_after_repair"),
+      attempt:2,
+      quality:repairedQuality,
+      draft:repairedDraft
+    };
+  }catch(error){
+    return {
+      failed:true,
+      error,
+      attempt:2,
+      quality,
+      draft
+    };
+  }
 }
 
 async function planAccount({sql,origin,account,date}){
@@ -186,7 +226,7 @@ async function planAccount({sql,origin,account,date}){
         quality_score:generated.quality?.score??null,
         attempt_count:generated.attempt,
         last_error:generated.error
-          ? `generation: ${generated.error.message}${generated.error.details?" · "+generated.error.details:""}`
+          ? `${generated.error.message}${generated.error.details?" · "+generated.error.details:""}`
           : `quality below threshold ${generated.quality?.score??"-"}/${threshold}`
       });
       results.push({slot:i,status:"quality_failed",score:generated.quality?.score??null});
@@ -318,7 +358,7 @@ export default async function handler(req,res){
     const origin=originFromReq(req);
 
     const accounts=await sql(
-      `select a.id,a.name,a.handle,a.daily_post_goal,a.cta_ratio,a.threads_user_id,
+      `select a.id,a.name,a.handle,a.sector,a.daily_post_goal,a.cta_ratio,a.threads_user_id,
         coalesce(cp.auto_publish_threshold,90) as auto_publish_threshold,
         coalesce(cp.type_mix,'{}'::jsonb) as type_mix
        from roader_accounts a

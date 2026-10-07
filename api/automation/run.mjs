@@ -229,7 +229,7 @@ async function generatePassingDraft({origin,account,postType,recentTexts,exclude
   }
 }
 
-async function planAccount({sql,origin,account,date}){
+async function planAccount({sql,origin,account,date,onlySlotIndex=null}){
   const slots=slotsForGoal(
     account.daily_post_goal,
     account.performance_strategy?.preferred_hours_kst||[],
@@ -263,23 +263,18 @@ async function planAccount({sql,origin,account,date}){
   const active=new Map(existing.filter(r=>["scheduled","published","publishing"].includes(String(r.status))).map(r=>[Number(r.slot_index),r]));
 
   const results=[];
-  let generatedThisRun=0;
   const currentKstHour=Number(new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Seoul",hour:"2-digit",hour12:false}).format(new Date()));
 
   for(let i=0;i<slots.length;i++){
+    if(onlySlotIndex!==null && i!==onlySlotIndex) continue;
     if(active.has(i)){ results.push({slot:i,status:"already_planned"}); continue; }
     if(slots[i] <= currentKstHour){
       results.push({slot:i,status:"past_slot_skipped"});
       continue;
     }
-    if(generatedThisRun>=2){
-      results.push({slot:i,status:"deferred_to_next_run"});
-      continue;
-    }
 
     const run=await claimRun(sql,account.id,date,i,slots[i]);
     if(!run){ results.push({slot:i,status:"claimed"}); continue; }
-    generatedThisRun++;
 
     const seed=seededPercent(account.id,date,i);
     const preferredTypes=Array.isArray(account.performance_strategy?.preferred_post_types)
@@ -460,10 +455,52 @@ export default async function handler(req,res){
        order by a.id asc`
     );
 
-    const planning=[];
+    const runRows=await sql(
+      `select account_id,slot_index,status,updated_at
+       from roader_automation_runs
+       where run_date=$1::date`,
+      [now.date]
+    );
+    const runMap=new Map(runRows.map(r=>[`${r.account_id}:${r.slot_index}`,r]));
+
+    const queue=[];
     for(const account of accounts){
-      const rows=await planAccount({sql,origin,account,date:now.date});
-      planning.push({account_id:account.id,rows});
+      const slots=slotsForGoal(
+        account.daily_post_goal,
+        account.performance_strategy?.preferred_hours_kst||[],
+        account.performance_confidence
+      );
+      for(let i=0;i<slots.length;i++){
+        const hour=slots[i];
+        if(hour<=now.hour) continue;
+        const existing=runMap.get(`${account.id}:${i}`);
+        const staleRunning=existing?.status==="running" &&
+          (Date.now()-new Date(existing.updated_at).getTime()>10*60*1000);
+        const retryable=!existing ||
+          ["generation_failed","quality_failed","topic_duplicate","plan_failed","publish_failed"].includes(String(existing.status)) ||
+          staleRunning;
+        if(retryable) queue.push({account,slot_index:i,slot_hour:hour});
+      }
+    }
+
+    queue.sort((a,b)=>a.slot_hour-b.slot_hour || Number(a.account.id)-Number(b.account.id));
+
+    const planning=[];
+    const maxTasks=4;
+    for(const task of queue.slice(0,maxTasks)){
+      const rows=await planAccount({
+        sql,
+        origin,
+        account:task.account,
+        date:now.date,
+        onlySlotIndex:task.slot_index
+      });
+      planning.push({
+        account_id:task.account.id,
+        slot_index:task.slot_index,
+        slot_hour:task.slot_hour,
+        rows
+      });
     }
 
     const publishing=await publishDue({sql,origin});

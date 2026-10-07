@@ -125,3 +125,19 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 
 .chart-preview{padding:0;overflow:hidden;background:#06182a;border-radius:14px}
 .chart-preview img{display:block;width:100%;height:auto;max-height:720px;object-fit:contain;background:#06182a}
+
+
+.danger-action{
+  color:#b42318;
+  border-color:#f3b5ad;
+  background:#fff;
+}
+.danger-action:hover:not(:disabled){
+  color:#8f1d14;
+  border-color:#e88a7d;
+  background:#fff6f5;
+}
+.danger-action:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}

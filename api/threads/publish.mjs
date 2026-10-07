@@ -29,11 +29,9 @@ export default async function handler(req,res){
     const text=String(body.body||"").trim();
     const replyText=String(body.reply_text||"").trim();
     const mediaMode=String(body.media_mode||"text");
-    const imageUrl=String(body.image_url||"").trim();
 
     if(!accountId||!text) return res.status(400).json({ok:false,error:"account_id_and_body_required"});
-    if(!["text","image"].includes(mediaMode)) return res.status(400).json({ok:false,error:"text_only_for_now"});
-    if(mediaMode==="image"&&!imageUrl) return res.status(400).json({ok:false,error:"image_url_required"});
+    if(mediaMode!=="text") return res.status(400).json({ok:false,error:"text_only_for_now"});
 
     const textLength=unicodeLength(text);
     const replyLength=unicodeLength(replyText);
@@ -95,69 +93,28 @@ export default async function handler(req,res){
       });
     }
 
-    let threadsPostId=null;
-
-    if(mediaMode==="image"){
-      const proto=String(req.headers["x-forwarded-proto"]||"https").split(",")[0];
-      const host=String(req.headers["x-forwarded-host"]||req.headers.host||"");
-      const absoluteImageUrl=/^https?:\/\//i.test(imageUrl)?imageUrl:`${proto}://${host}${imageUrl.startsWith("/")?"":"/"}${imageUrl}`;
-
-      const container=await graphPost(
-        "https://graph.threads.net/v1.0/me/threads",
-        {
-          media_type:"IMAGE",
-          image_url:absoluteImageUrl,
-          text,
-          access_token:token
-        }
-      );
-
-      if(!container.response.ok||!container.data?.id){
-        if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-        const details=metaError(container.data);
-        const code=container.data?.error?.code||container.data?.error_code||null;
-        console.error("threads-image-container",container.data);
-        return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
+    const publish=await graphPost(
+      "https://graph.threads.net/v1.0/me/threads",
+      {
+        media_type:"TEXT",
+        text,
+        auto_publish_text:"true",
+        access_token:token
       }
+    );
 
-      const finalPublish=await graphPost(
-        "https://graph.threads.net/v1.0/me/threads_publish",
-        {creation_id:String(container.data.id),access_token:token}
-      );
-
-      if(!finalPublish.response.ok||!finalPublish.data?.id){
-        if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-        const details=metaError(finalPublish.data);
-        const code=finalPublish.data?.error?.code||finalPublish.data?.error_code||null;
-        console.error("threads-image-publish",finalPublish.data);
-        return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
+    if(!publish.response.ok||!publish.data?.id){
+      if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
+      const details=metaError(publish.data);
+      const code=publish.data?.error?.code||publish.data?.error_code||null;
+      if(isThreadsExpiredError(details)){
+        return res.status(401).json({ok:false,error:"threads_token_expired",details,code});
       }
-
-      threadsPostId=String(finalPublish.data.id);
-    }else{
-      const publish=await graphPost(
-        "https://graph.threads.net/v1.0/me/threads",
-        {
-          media_type:"TEXT",
-          text,
-          auto_publish_text:"true",
-          access_token:token
-        }
-      );
-
-      if(!publish.response.ok||!publish.data?.id){
-        if(postId) await sql("update roader_posts set status='failed',updated_at=now() where id=$1",[postId]);
-        const details=metaError(publish.data);
-        const code=publish.data?.error?.code||publish.data?.error_code||null;
-        if(isThreadsExpiredError(details)){
-          return res.status(401).json({ok:false,error:"threads_token_expired",details,code});
-        }
-        console.error("threads-auto-publish",publish.data);
-        return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
-      }
-
-      threadsPostId=String(publish.data.id);
+      console.error("threads-auto-publish",publish.data);
+      return res.status(502).json({ok:false,error:"threads_publish_failed",details,code});
     }
+
+    const threadsPostId=String(publish.data.id);
 
     if(postId){
       await sql(

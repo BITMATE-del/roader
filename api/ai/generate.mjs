@@ -644,22 +644,6 @@ export default async function handler(req,res){
     finalBody=hardFitThreadsText(finalBody,490);
     finalReply=hardFitThreadsText(finalReply,490);
 
-    let chartUrl=null;
-    if(isCrypto && liveMarket && technicalAnalysis){
-      const support=technicalAnalysis.support_1||liveMarket.low_price;
-      const resistance=technicalAnalysis.resistance_1||liveMarket.high_price;
-      const q=new URLSearchParams({
-        name:String(parsed.coin_name||parsed.symbol||""),
-        symbol:normalizeTicker(parsed.symbol||""),
-        current:String(liveMarket.trade_price||""),
-        change:String(liveMarket.signed_change_rate||0),
-        support:String(support||""),
-        resistance:String(resistance||""),
-        rsi:String(technicalAnalysis.rsi14??"")
-      });
-      chartUrl="/api/chart/image?"+q.toString();
-    }
-
     return res.status(200).json({
       ok:true,
       selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
@@ -669,7 +653,6 @@ export default async function handler(req,res){
       reply:finalReply,
       body_length:unicodeLength(finalBody),
       reply_length:unicodeLength(finalReply),
-      chart_url:chartUrl,
       live_market:liveMarket,
       technical_analysis:technicalAnalysis,
       model

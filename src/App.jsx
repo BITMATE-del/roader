@@ -15,6 +15,8 @@ const navItems = [
   [BrainCircuit,"스타일 학습","learning"],
   [Sparkles,"AI 게시물 생성","writer"],
   [CalendarDays,"게시 스케줄러","scheduler"],
+  [Database,"캐시 로그","cachelogs"],
+  [BrainCircuit,"학습 로그","learninglogs"],
   [History,"게시 이력","history"],
   [BarChart3,"성과 분석","analytics"],
   [Send,"텔레그램 신청 관리","leads"],
@@ -977,6 +979,135 @@ function Scheduler({schedules,onRefresh}){
   </>;
 }
 
+
+function CacheLogs(){
+  const [logs,setLogs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [message,setMessage]=useState("");
+
+  async function load(){
+    setLoading(true);setMessage("");
+    try{
+      const r=await api("/api/logs/cache");
+      setLogs(r.logs||[]);
+    }catch(e){
+      setMessage("캐시 로그를 불러오지 못했습니다. · "+(e.details||e.message||"server_error"));
+    }finally{setLoading(false);}
+  }
+
+  useEffect(()=>{load();},[]);
+
+  const stats=useMemo(()=>({
+    total:logs.length,
+    success:logs.filter(x=>["scheduled","published"].includes(String(x.status))).length,
+    retry:logs.filter(x=>["generation_failed","quality_failed","topic_duplicate","publish_failed","plan_failed"].includes(String(x.status))).length,
+    running:logs.filter(x=>x.status==="running").length
+  }),[logs]);
+
+  const label={
+    running:"처리 중",
+    scheduled:"예약 완료",
+    published:"게시 완료",
+    generation_failed:"생성 실패",
+    quality_failed:"품질 보정",
+    topic_duplicate:"주제 재선정",
+    publish_failed:"게시 재시도",
+    plan_failed:"계획 실패"
+  };
+
+  return <>
+    <div className="hero-row"><div><h1>캐시 로그</h1><p>자동 생성·예약·게시 과정에서 쌓이는 작업 상태를 확인합니다.</p></div><button className="ghost" onClick={load} disabled={loading}>{loading?<Loader2 className="spin" size={15}/>:<RefreshCw size={15}/>} 새로고침</button></div>
+    <div className="log-summary">
+      <div><span>전체 로그</span><b>{stats.total}</b></div>
+      <div><span>정상 처리</span><b>{stats.success}</b></div>
+      <div><span>재시도/보정</span><b>{stats.retry}</b></div>
+      <div><span>처리 중</span><b>{stats.running}</b></div>
+    </div>
+    {message&&<div className="form-error">{message}</div>}
+    <div className="panel">
+      {loading?<div className="loading-line"><Loader2 className="spin"/> 로그 불러오는 중</div>:logs.length===0?<EmptyState title="아직 캐시 로그가 없습니다." desc="자동화가 실행되면 작업 로그가 여기에 쌓입니다."/>:
+      <div className="log-list">{logs.map(x=><div className="log-row" key={x.id}>
+        <div className="log-time"><b>{fmtDate(x.updated_at)}</b><span>{x.account_name} · {String(x.slot_hour).padStart(2,"0")}:10</span></div>
+        <div className="log-main">
+          <div className="log-title"><b>{x.generated_topic||x.account_name}</b><StatusBadge>{label[x.status]||x.status}</StatusBadge></div>
+          <p>{x.last_error||(
+            x.status==="published"?"Threads 게시까지 완료되었습니다.":
+            x.status==="scheduled"?"품질검사를 통과해 예약되었습니다.":
+            x.status==="running"?"자동화가 현재 이 슬롯을 처리하고 있습니다.":
+            "자동화 작업 상태가 갱신되었습니다."
+          )}</p>
+        </div>
+        <div className="log-meta"><span>품질</span><b>{x.quality_score??"-"}</b><small>{x.attempt_count?("시도 "+x.attempt_count+"회"):"-"}</small></div>
+      </div>)}</div>}
+    </div>
+  </>;
+}
+
+function LearningLogs(){
+  const [data,setData]=useState({runs:[],profiles:[]});
+  const [loading,setLoading]=useState(true);
+  const [message,setMessage]=useState("");
+
+  async function load(){
+    setLoading(true);setMessage("");
+    try{
+      const r=await api("/api/logs/learning");
+      setData({runs:r.runs||[],profiles:r.profiles||[]});
+    }catch(e){
+      setMessage("학습 로그를 불러오지 못했습니다. · "+(e.details||e.message||"server_error"));
+    }finally{setLoading(false);}
+  }
+
+  useEffect(()=>{load();},[]);
+
+  return <>
+    <div className="hero-row"><div><h1>학습 로그</h1><p>실제 게시 성과를 바탕으로 ROADER가 계정별 작성 전략을 어떻게 바꾸고 있는지 확인합니다.</p></div><button className="ghost" onClick={load} disabled={loading}>{loading?<Loader2 className="spin" size={15}/>:<RefreshCw size={15}/>} 새로고침</button></div>
+    {message&&<div className="form-error">{message}</div>}
+
+    <div className="learning-profile-grid">
+      {data.profiles.map(p=>{
+        const s=p.strategy||{};
+        const winners=Array.isArray(s.winning_patterns)?s.winning_patterns:[];
+        const avoids=Array.isArray(s.avoid_patterns)?s.avoid_patterns:[];
+        const types=Array.isArray(s.preferred_post_types)?s.preferred_post_types:[];
+        const hours=Array.isArray(s.preferred_hours_kst)?s.preferred_hours_kst:[];
+        return <div className="learning-profile-card" key={p.account_id}>
+          <div className="learning-profile-head"><div><b>{p.account_name}</b><span>{p.handle}</span></div><div className="learning-confidence"><strong>{p.confidence}%</strong><small>신뢰도</small></div></div>
+          <div className="learning-profile-stats"><span>학습 표본 <b>{p.sample_count}개</b></span><span>최근 학습 <b>{fmtDate(p.last_learned_at)}</b></span></div>
+          <div className="learning-rule-block"><label>잘된 패턴</label>{winners.length?<ul>{winners.slice(0,4).map((x,i)=><li key={i}>{x}</li>)}</ul>:<p>아직 충분한 성과 패턴이 없습니다.</p>}</div>
+          <div className="learning-rule-block avoid"><label>피할 패턴</label>{avoids.length?<ul>{avoids.slice(0,4).map((x,i)=><li key={i}>{x}</li>)}</ul>:<p>아직 회피 패턴이 없습니다.</p>}</div>
+          <div className="learning-mini-grid">
+            <div><span>우선 유형</span><b>{types.length?types.join(" · "):"-"}</b></div>
+            <div><span>좋은 시간대</span><b>{hours.length?hours.map(h=>String(h).padStart(2,"0")+":00").join(" · "):"-"}</b></div>
+            <div><span>추천 길이</span><b>{s.target_length_min&&s.target_length_max?(s.target_length_min+"~"+s.target_length_max+"자"):"-"}</b></div>
+            <div><span>실험 비율</span><b>{s.exploration_ratio!=null?(s.exploration_ratio+"%"):"-"}</b></div>
+          </div>
+          {s.hook_guidance&&<div className="learning-guidance"><span>다음 훅 방향</span><p>{s.hook_guidance}</p></div>}
+          {s.engagement_guidance&&<div className="learning-guidance"><span>반응 유도 방향</span><p>{s.engagement_guidance}</p></div>}
+        </div>;
+      })}
+    </div>
+
+    <div className="panel">
+      <SectionTitle title="학습 이력" action={<span className="tag">성과 기반 자동 갱신</span>}/>
+      {loading?<div className="loading-line"><Loader2 className="spin"/> 학습 데이터 불러오는 중</div>:data.runs.length===0?<EmptyState title="아직 학습 이력이 없습니다." desc="성과 데이터가 6개 이상 쌓이면 계정별 자동 학습이 시작됩니다."/>:
+      <div className="table-wrap"><table><thead><tr><th>학습시간</th><th>계정</th><th>표본</th><th>신뢰도</th><th>상태</th><th>학습 요약</th></tr></thead><tbody>
+        {data.runs.map(r=>{
+          const s=r.summary?.strategy||r.summary||{};
+          return <tr key={r.id}>
+            <td>{fmtDate(r.created_at)}</td>
+            <td>{r.account_name}</td>
+            <td>{r.sample_count}개</td>
+            <td>{r.confidence}%</td>
+            <td><StatusBadge>{r.status==="completed"?"학습 완료":r.status}</StatusBadge></td>
+            <td className="learning-log-summary">{s.rationale||s.hook_guidance||"성과 데이터를 기반으로 전략 프로필을 갱신했습니다."}</td>
+          </tr>;
+        })}
+      </tbody></table></div>}
+    </div>
+  </>;
+}
+
 function HistoryPage({posts}){
   return <><div className="hero-row"><div><h1>게시 이력</h1><p>DB에 저장된 실제 게시물 초안과 게시 상태입니다.</p></div></div><div className="panel">
     {posts.length===0?<EmptyState title="게시 이력이 없습니다." desc="첫 게시물을 저장하면 여기에 나타납니다."/>:<div className="table-wrap"><table><thead><tr><th>생성일</th><th>계정</th><th>본문</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>
@@ -1123,6 +1254,8 @@ export default function App(){
     learning:<StyleLearning accounts={accounts} onRefresh={loadAll}/>,
     writer:<Writer accounts={accounts} posts={posts} onSaved={loadAll}/>,
     scheduler:<Scheduler schedules={schedules} onRefresh={loadAll}/>,
+    cachelogs:<CacheLogs/>,
+    learninglogs:<LearningLogs/>,
     history:<HistoryPage posts={posts}/>,
     analytics:<Analytics data={dashboard} onRefresh={loadAll}/>,
     leads:<Leads leads={leads} onRefresh={loadAll}/>,

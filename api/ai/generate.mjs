@@ -577,9 +577,9 @@ export default async function handler(req,res){
         input:JSON.stringify(context),
         tools:[{
           type:"web_search",
-          search_context_size:isCrypto?"high":"medium"
+          search_context_size:"medium"
         }],
-        tool_choice:topicOverride ? "auto" : "required",
+        tool_choice:"auto",
         text:{
           format:{
             type:"json_schema",

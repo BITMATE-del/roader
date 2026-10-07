@@ -79,7 +79,7 @@ async function claimRun(sql,accountId,date,slotIndex,slotHour){
      values ($1,$2::date,$3,$4,'running',0)
      on conflict (account_id,run_date,slot_index)
      do update set status='running',attempt_count=0,last_error=null,updated_at=now()
-       where roader_automation_runs.status in ('quality_failed','plan_failed','publish_failed')
+       where roader_automation_runs.status in ('generation_failed','quality_failed','topic_duplicate','plan_failed','publish_failed')
           or (roader_automation_runs.status='running' and roader_automation_runs.updated_at < now()-interval '10 minutes')
      returning *`,
     [accountId,date,slotIndex,slotHour]
@@ -253,15 +253,27 @@ async function planAccount({sql,origin,account,date}){
     });
 
     if(generated.failed){
+      const errorMessage=String(generated.error?.message||"");
+      const status=!generated.quality
+        ? (errorMessage==="duplicate_topic"?"topic_duplicate":"generation_failed")
+        : "quality_failed";
+      const blockers=Array.isArray(generated.quality?.blockers)?generated.quality.blockers:[];
+      const lastError=generated.quality
+        ? `quality ${generated.quality.score}/${threshold}${blockers.length?" · "+blockers.join(" · "):""}`
+        : `${errorMessage||"generation_failed"}${generated.error?.details?" · "+generated.error.details:""}`;
+
       await finishRun(sql,run.id,{
-        status:"quality_failed",
+        status,
         quality_score:generated.quality?.score??null,
         attempt_count:generated.attempt,
-        last_error:generated.error
-          ? `${generated.error.message}${generated.error.details?" · "+generated.error.details:""}`
-          : `quality below threshold ${generated.quality?.score??"-"}/${threshold}`
+        last_error:lastError
       });
-      results.push({slot:i,status:"quality_failed",score:generated.quality?.score??null});
+      results.push({
+        slot:i,
+        status,
+        score:generated.quality?.score??null,
+        error:lastError
+      });
       continue;
     }
 

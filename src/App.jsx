@@ -778,8 +778,11 @@ function Scheduler({schedules,onRefresh}){
       const r=await api("/api/automation/prepare",{method:"POST",body:JSON.stringify({})});
       const planning=(r.planning||[]).flatMap(x=>x.rows||[]);
       const scheduled=planning.filter(x=>x.status==="scheduled").length;
-      const failed=planning.filter(x=>x.status==="quality_failed").length;
-      if(!silent) setMessage(`예약 준비 완료 · 생성 ${scheduled}개${failed? ` · 품질 재검토 ${failed}개`:""}`);
+      const failed=planning.filter(x=>["quality_failed","generation_failed","topic_duplicate"].includes(x.status));
+      if(!silent){
+        const firstError=failed.find(x=>x.error)?.error||"";
+        setMessage(`예약 준비 완료 · 생성 ${scheduled}개${failed.length? ` · 재시도 ${failed.length}개`:""}${firstError?" · "+firstError:""}`);
+      }
       await onRefresh();
     }catch(e){
       if(!silent) setMessage("예약 준비 실패 · "+(e.details||e.message||"server_error"));
@@ -831,7 +834,9 @@ function Scheduler({schedules,onRefresh}){
     return {
       generation_pending:"생성 대기",
       running:"생성 중",
-      quality_failed:"품질 재검토",
+      generation_failed:"생성 실패",
+      topic_duplicate:"주제 중복",
+      quality_failed:"품질 미달",
       plan_failed:"생성 실패",
       scheduled:"게시 예정",
       publishing:"게시 중",
@@ -856,12 +861,16 @@ function Scheduler({schedules,onRefresh}){
         <td>{s.generated_topic||"-"}</td>
         <td className="text-cell">{s.body||(
           s.status==="quality_failed"
-            ?"품질 기준을 통과하지 못해 다음 자동화에서 다시 준비합니다."
-            :s.status==="generation_pending"
-              ?"아직 글을 생성하지 않았습니다."
-              :s.status==="running"
-                ?"현재 글을 생성하고 있습니다."
-                :s.last_error||"-"
+            ?(s.last_error||"품질 기준을 통과하지 못해 다음 자동화에서 다시 보정합니다.")
+            :s.status==="generation_failed"
+              ?(s.last_error||"AI 글 생성 단계에서 실패했습니다. 다음 자동화에서 다시 시도합니다.")
+              :s.status==="topic_duplicate"
+                ?(s.last_error||"오늘 이미 사용한 주제와 겹쳐 다른 주제로 다시 시도합니다.")
+                :s.status==="generation_pending"
+                  ?"아직 글을 생성하지 않았습니다."
+                  :s.status==="running"
+                    ?"현재 글을 생성하고 있습니다."
+                    :s.last_error||"-"
         )}</td>
         <td><StatusBadge>{statusLabel(s.status)}</StatusBadge></td>
         <td>{s.quality_score??"-"}</td>

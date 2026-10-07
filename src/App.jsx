@@ -755,6 +755,8 @@ function Scheduler({schedules,onRefresh}){
   const [editReply,setEditReply]=useState("");
   const [saving,setSaving]=useState(false);
   const [message,setMessage]=useState("");
+  const [preparing,setPreparing]=useState(false);
+  const [autoTried,setAutoTried]=useState(false);
 
   const editQuality=useMemo(()=>scorePost({
     text:editText,
@@ -763,7 +765,37 @@ function Scheduler({schedules,onRefresh}){
     recentTexts:[]
   }),[editText]);
 
+  const needsPreparation=useMemo(
+    ()=>schedules.some(s=>["generation_pending","quality_failed","plan_failed","publish_failed"].includes(String(s.status))),
+    [schedules]
+  );
+
+  async function prepareNow(silent=false){
+    if(preparing) return;
+    setPreparing(true);
+    if(!silent) setMessage("");
+    try{
+      const r=await api("/api/automation/prepare",{method:"POST",body:JSON.stringify({})});
+      const planning=(r.planning||[]).flatMap(x=>x.rows||[]);
+      const scheduled=planning.filter(x=>x.status==="scheduled").length;
+      const failed=planning.filter(x=>x.status==="quality_failed").length;
+      if(!silent) setMessage(`예약 준비 완료 · 생성 ${scheduled}개${failed? ` · 품질 재검토 ${failed}개`:""}`);
+      await onRefresh();
+    }catch(e){
+      if(!silent) setMessage("예약 준비 실패 · "+(e.details||e.message||"server_error"));
+    }finally{
+      setPreparing(false);
+    }
+  }
+
+  useEffect(()=>{
+    if(autoTried||preparing||!needsPreparation) return;
+    setAutoTried(true);
+    prepareNow(true);
+  },[autoTried,preparing,needsPreparation]);
+
   function openEdit(row){
+    if(!row.post_id||!row.body) return;
     setEditing(row);
     setEditText(row.body||"");
     setEditReply(row.reply_text||"");
@@ -795,11 +827,46 @@ function Scheduler({schedules,onRefresh}){
     }finally{setSaving(false);}
   }
 
+  function statusLabel(status){
+    return {
+      generation_pending:"생성 대기",
+      running:"생성 중",
+      quality_failed:"품질 재검토",
+      plan_failed:"생성 실패",
+      scheduled:"게시 예정",
+      publishing:"게시 중",
+      published:"게시 완료",
+      publish_failed:"게시 재시도"
+    }[String(status)]||String(status||"-");
+  }
+
   return <>
-    <div className="hero-row"><div><h1>게시 스케줄러</h1><p>자동화가 오늘 게시할 글을 미리 생성합니다. 게시 전 본문과 첫 댓글을 수정할 수 있습니다.</p></div></div>
+    <div className="hero-row">
+      <div><h1>게시 스케줄러</h1><p>오늘 게시 슬롯과 자동 생성 상태를 모두 표시합니다. 게시 예정 글은 게시 전 수정할 수 있습니다.</p></div>
+      <button className="primary" onClick={()=>prepareNow(false)} disabled={preparing}>
+        {preparing?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>}
+        {preparing?"예약글 준비 중":"예약글 지금 준비"}
+      </button>
+    </div>
     {message&&<div className="save-message">{message}</div>}
-    <div className="panel">{schedules.length===0?<EmptyState title="예약된 게시물이 없습니다." desc="자동화가 다음 게시 슬롯을 생성하면 여기에 예정 글이 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>주제</th><th>게시물</th><th>상태</th><th>품질</th><th>수정</th></tr></thead><tbody>
-      {schedules.map(s=><tr key={s.id}><td>{fmtDate(s.scheduled_at)}</td><td>{s.account_name}</td><td>{s.generated_topic||"-"}</td><td className="text-cell">{s.body}</td><td><StatusBadge>{s.status==="scheduled"?"게시 예정":s.status}</StatusBadge></td><td>{s.quality_score??"-"}</td><td>{s.status==="scheduled"?<button className="ghost" onClick={()=>openEdit(s)}>수정</button>:"-"}</td></tr>)}
+    <div className="panel">{schedules.length===0?<EmptyState title="오늘 게시 슬롯이 없습니다." desc="계정의 하루 게시 목표가 0이거나 자동 운영이 꺼져 있는지 확인해주세요."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>주제</th><th>게시물</th><th>상태</th><th>품질</th><th>수정</th></tr></thead><tbody>
+      {schedules.map(s=><tr key={s.id}>
+        <td>{fmtDate(s.scheduled_at)}</td>
+        <td>{s.account_name}</td>
+        <td>{s.generated_topic||"-"}</td>
+        <td className="text-cell">{s.body||(
+          s.status==="quality_failed"
+            ?"품질 기준을 통과하지 못해 다음 자동화에서 다시 준비합니다."
+            :s.status==="generation_pending"
+              ?"아직 글을 생성하지 않았습니다."
+              :s.status==="running"
+                ?"현재 글을 생성하고 있습니다."
+                :s.last_error||"-"
+        )}</td>
+        <td><StatusBadge>{statusLabel(s.status)}</StatusBadge></td>
+        <td>{s.quality_score??"-"}</td>
+        <td>{s.status==="scheduled"&&s.post_id?<button className="ghost" onClick={()=>openEdit(s)}>수정</button>:"-"}</td>
+      </tr>)}
     </tbody></table></div>}</div>
 
     {editing&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setEditing(null)}>

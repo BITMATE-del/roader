@@ -45,7 +45,8 @@ export default async function handler(req,res){
       `);
 
       const accounts=await sql(`
-        select a.id,a.name,a.handle,a.daily_post_goal,
+        select a.id,a.name,a.handle,a.daily_post_goal,a.threads_user_id,
+          (a.threads_access_token_encrypted is not null) as has_threads_token,
           coalesce(pp.strategy,'{}'::jsonb) as performance_strategy,
           coalesce(pp.confidence,0) as performance_confidence,
           coalesce(cp.auto_publish_threshold,90) as auto_publish_threshold
@@ -77,11 +78,12 @@ export default async function handler(req,res){
         for(let i=0;i<hours.length;i++){
           const run=runByKey.get(`${a.id}:${i}`);
           if(run?.post_id&&actualByPost.has(Number(run.post_id))) continue;
+          const connected=Boolean(a.threads_user_id&&a.has_threads_token);
           synthetic.push({
             id:`slot-${a.id}-${i}`,
             scheduled_at:`${today}T${String(hours[i]).padStart(2,"0")}:10:00+09:00`,
             timezone:"Asia/Seoul",
-            status:run?.status||"generation_pending",
+            status:connected?(run?.status||"generation_pending"):"connection_required",
             last_error:run?.last_error||null,
             attempt_count:Number(run?.attempt_count||0),
             post_id:run?.post_id||null,

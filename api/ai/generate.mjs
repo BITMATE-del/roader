@@ -247,11 +247,12 @@ async function regenerateCryptoWithLivePrice({model,instructions,context,parsed,
             additionalProperties:false,
             properties:{
               selected_topic:{type:"string"},
+              coin_name:{type:"string"},
               symbol:{type:"string"},
               body:{type:"string"},
               reply:{type:"string"}
             },
-            required:["selected_topic","symbol","body","reply"]
+            required:["selected_topic","coin_name","symbol","body","reply"]
           }
         }
       }
@@ -457,6 +458,7 @@ export default async function handler(req,res){
       "Threads 본문은 반드시 470자 이하로 작성한다. 첫 댓글은 반드시 300자 이하로 작성한다. 제한을 넘길 것 같으면 반복 설명과 군더더기를 줄이고 핵심만 남긴다.",
       "최종 출력은 지정된 JSON 스키마만 반환한다.",
       "코인 소재라면 symbol 필드에는 거래소에서 사용하는 영문 티커만 넣는다. 예: ORCA, ADA, SOL. 코인 소재가 아니면 빈 문자열로 둔다.",
+      "코인 소재라면 coin_name 필드에는 한국에서 통용되는 코인명을 넣는다. 예: 솔라나, 이더리움, 오르카. 코인 소재가 아니면 빈 문자열로 둔다.",
       ...(isCrypto ? [
         "이 계정은 코인 전용 전망 계정이다. 단순 뉴스 요약이 아니라 '현재 가격이 어디쯤이고, 앞으로 어떻게 볼 것인지'까지 설명해야 한다.",
         "비트코인을 습관적으로 첫 소재로 선택하지 않는다. 최근 24~72시간 코인 시장에서 실제로 관심이 증가한 종목·테마 후보를 여러 개 찾고, 가격과 전망을 설명할 가치가 높은 소재를 고른다.",
@@ -542,11 +544,12 @@ export default async function handler(req,res){
               additionalProperties:false,
               properties:{
                 selected_topic:{type:"string"},
+                coin_name:{type:"string"},
                 symbol:{type:"string"},
                 body:{type:"string"},
                 reply:{type:"string"}
               },
-              required:["selected_topic","symbol","body","reply"]
+              required:["selected_topic","coin_name","symbol","body","reply"]
             }
           }
         }
@@ -617,14 +620,32 @@ export default async function handler(req,res){
     finalBody=hardFitThreadsText(finalBody,490);
     finalReply=hardFitThreadsText(finalReply,490);
 
+    let chartUrl=null;
+    if(isCrypto && liveMarket && technicalAnalysis){
+      const support=technicalAnalysis.support_1||liveMarket.low_price;
+      const resistance=technicalAnalysis.resistance_1||liveMarket.high_price;
+      const q=new URLSearchParams({
+        name:String(parsed.coin_name||parsed.symbol||""),
+        symbol:normalizeTicker(parsed.symbol||""),
+        current:String(liveMarket.trade_price||""),
+        change:String(liveMarket.signed_change_rate||0),
+        support:String(support||""),
+        resistance:String(resistance||""),
+        rsi:String(technicalAnalysis.rsi14??"")
+      });
+      chartUrl="/api/chart/image?"+q.toString();
+    }
+
     return res.status(200).json({
       ok:true,
       selected_topic:sanitizeVisibleText(parsed.selected_topic||""),
+      coin_name:sanitizeVisibleText(parsed.coin_name||""),
       symbol:normalizeTicker(parsed.symbol||""),
       body:finalBody,
       reply:finalReply,
       body_length:unicodeLength(finalBody),
       reply_length:unicodeLength(finalReply),
+      chart_url:chartUrl,
       live_market:liveMarket,
       technical_analysis:technicalAnalysis,
       model

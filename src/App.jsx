@@ -551,6 +551,7 @@ function Writer({accounts,posts,onSaved}){
   const [mediaMode,setMediaMode]=useState("text");
   const [text,setText]=useState("");
   const [image,setImage]=useState(null);
+  const [chartUrl,setChartUrl]=useState("");
   const [saving,setSaving]=useState(false);
   const [publishing,setPublishing]=useState(false);
   const [generating,setGenerating]=useState(false);
@@ -563,7 +564,7 @@ function Writer({accounts,posts,onSaved}){
   const quality=useMemo(()=>scorePost({
     text,
     mediaMode,
-    hasImage:!!image,
+    hasImage:!!image||!!chartUrl,
     recentTexts:posts.filter(p=>p.status==="published").map(p=>p.body)
   }),[text,mediaMode,image,posts]);
   const selected=accounts.find(a=>String(a.id)===account);
@@ -580,7 +581,15 @@ function Writer({accounts,posts,onSaved}){
       })});
       setText(result.body||"");
       setReplyText(result.reply||"");
-      setMessage(`AI 자동 소재 선정 + 초안 생성 완료${result.selected_topic?` · ${result.selected_topic}`:""}`);
+      if(result.chart_url){
+        setChartUrl(result.chart_url);
+        setMediaMode("image");
+        setImage(null);
+      }else{
+        setChartUrl("");
+        setMediaMode("text");
+      }
+      setMessage(`AI 자동 소재 선정 + 초안 생성 완료${result.selected_topic?` · ${result.selected_topic}`:""}${result.chart_url?" · 분석 차트 생성 완료":""}`);
     }catch(e){
       setMessageType("error");
       const map={
@@ -616,9 +625,9 @@ function Writer({accounts,posts,onSaved}){
       setMessage("선택한 계정은 Threads 연결이 필요합니다.");
       return;
     }
-    if(mediaMode!=="text"){
+    if(mediaMode==="image"&&!chartUrl){
       setMessageType("error");
-      setMessage("이미지 게시를 위해 이미지 저장소 연결이 먼저 필요합니다. 현재는 텍스트 게시만 지원합니다.");
+      setMessage("자동 생성된 분석 차트가 없습니다. AI 게시물 자동 생성을 다시 실행해주세요.");
       return;
     }
     if(quality.status==="blocked"){
@@ -637,7 +646,8 @@ function Writer({accounts,posts,onSaved}){
         quality_score:quality.score,
         quality_status:quality.status,
         quality_details:quality,
-        reply_text:replyText.trim()
+        reply_text:replyText.trim(),
+        image_url:chartUrl||null
       })});
       if(result.reply_ok){
         setMessage(`Threads 본문 + 1차 댓글 게시 완료 · 댓글 ID ${result.threads_reply_id}`);
@@ -648,6 +658,8 @@ function Writer({accounts,posts,onSaved}){
       }
       setText("");
       setImage(null);
+      setChartUrl("");
+      setMediaMode("text");
       await onSaved();
     }catch(e){
       setMessageType("error");
@@ -655,7 +667,8 @@ function Writer({accounts,posts,onSaved}){
         threads_account_not_connected:"Threads 계정 연결 정보가 없습니다.",
         threads_create_failed:"Threads 게시물 생성에 실패했습니다.",
         threads_publish_failed:"Threads 게시 최종 발행에 실패했습니다.",
-        text_only_for_now:"현재는 텍스트 게시만 지원합니다."
+        text_only_for_now:"지원하지 않는 게시 방식입니다.",
+        image_url_required:"분석 차트 이미지가 없습니다."
       };
       const base=map[e.message]||`Threads 게시 실패 · ${e.message||"server_error"}`;
       setMessage(e.details?`${base} · Meta: ${e.details}`:base);
@@ -684,7 +697,11 @@ function Writer({accounts,posts,onSaved}){
         </div>
         <label>게시물 유형</label><div className="choice-row">{postTypes.map(([n,I])=><button className={type===n?"choice active":"choice"} onClick={()=>setType(n)} key={n}><I size={15}/>{n}</button>)}</div>
         <label>게시 방식</label><div className="choice-row"><button className={mediaMode==="text"?"choice active":"choice"} onClick={()=>setMediaMode("text")}><FileText size={15}/> 텍스트만</button><button className={mediaMode==="image"?"choice active":"choice"} onClick={()=>setMediaMode("image")}><ImageIcon size={15}/> 이미지 + 본문</button></div>
-        {mediaMode==="image"&&<label className="upload"><input type="file" accept="image/*" onChange={e=>setImage(e.target.files?.[0]||null)}/><UploadCloud size={24}/><b>{image?image.name:"이미지 선택"}</b><span>이미지 실제 게시를 위해 저장소 연결이 필요합니다.</span></label>}
+        {mediaMode==="image"&&<div className="upload">
+          <ImageIcon size={24}/>
+          <b>{chartUrl?"고정 템플릿 분석 차트":"분석 차트 대기"}</b>
+          <span>{chartUrl?"코인명·심볼·가격대·차트 데이터만 자동 교체됩니다.":"코인 게시물 자동 생성 시 분석 차트가 함께 만들어집니다."}</span>
+        </div>}
         <label>게시물 본문</label><textarea rows="15" value={text} onChange={e=>setText(e.target.value)} placeholder="Threads에 게시할 본문을 작성하세요."/>
         <div className="reply-editor">
           <div className="reply-editor-head"><label>게시 후 1차 댓글</label><span>{replyText.trim()?"자동 등록":"댓글 등록 안 함"}</span></div>
@@ -693,7 +710,7 @@ function Writer({accounts,posts,onSaved}){
         </div>
         <div className="publish-actions">
           <button className="ghost draft-action" onClick={saveDraft} disabled={saving||publishing||generating||!text.trim()||quality.status==="blocked"}>{saving?<Loader2 className="spin" size={17}/>:<Save size={17}/>} 초안 저장</button>
-          <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||generating||!connected||mediaMode!=="text"||!text.trim()||quality.status==="blocked"}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>
+          <button className="generate publish-action" onClick={publishNow} disabled={publishing||saving||generating||!connected||!text.trim()||quality.status==="blocked"||(mediaMode==="image"&&!chartUrl)}>{publishing?<Loader2 className="spin" size={17}/>:<Send size={17}/>} 지금 Threads에 게시</button>
         </div>
         {message&&<div className={messageType==="error"?"form-error":"save-message"}>{message}</div>}
       </div>
@@ -702,7 +719,7 @@ function Writer({accounts,posts,onSaved}){
           <SectionTitle title="게시물 미리보기" action={<span className="tag">{type}</span>}/>
           <div className="post-preview-head"><div className="avatar">{String(selected?.name||"?").slice(0,1)}</div><div><b>{selected?.name}</b><span>{selected?.handle}</span></div></div>
           <div className="post-live-preview">{text||<span className="muted">작성한 본문이 여기에 표시됩니다.</span>}</div>
-          {mediaMode==="image"&&<div className={image?"image-slot loaded":"image-slot"}><ImageIcon/><span>{image?image.name:"이미지가 필요합니다."}</span></div>}
+          {mediaMode==="image"&&<div className={chartUrl?"image-slot loaded chart-preview":"image-slot"}>{chartUrl?<img src={chartUrl} alt="자동 생성 분석 차트"/>:<><ImageIcon/><span>분석 차트가 필요합니다.</span></>}</div>}
         </div>
         <QualityPanel quality={quality}/>
       </div>

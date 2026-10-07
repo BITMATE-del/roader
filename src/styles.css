@@ -122,3 +122,6 @@ main{grid-column:2;min-width:0}header{height:58px;border-bottom:1px solid #e3e8f
 
 .referral-box{margin-top:10px;padding:9px 10px;border:1px solid #e3e8f0;border-radius:9px;background:#f8fafc;display:flex;align-items:center;gap:8px}.referral-box>div{min-width:0;flex:1}.referral-box b{display:block;font-size:11px;color:#4e5c70;margin-bottom:3px}.referral-box span{display:block;font-size:11px;color:#637086;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.referral-box .ghost{height:32px;padding:0 9px;font-size:11px;text-decoration:none;display:inline-flex;align-items:center;gap:5px}.referral-open{color:inherit}
 @media(max-width:760px){.referral-box{align-items:stretch;flex-wrap:wrap}.referral-box>div{flex-basis:100%}.referral-box .ghost{justify-content:center;flex:1}}
+
+.chart-preview{padding:0;overflow:hidden;background:#06182a;border-radius:14px}
+.chart-preview img{display:block;width:100%;height:auto;max-height:720px;object-fit:contain;background:#06182a}

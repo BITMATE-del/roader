@@ -40,7 +40,7 @@
   "crons": [
     {
       "path": "/api/automation/run",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/metrics/sync",

@@ -93,6 +93,22 @@ export async function ensureSchema() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )`,
+    `create table if not exists roader_automation_runs (
+      id bigserial primary key,
+      account_id bigint not null references roader_accounts(id) on delete cascade,
+      run_date date not null,
+      slot_index integer not null,
+      slot_hour integer not null,
+      status text not null default 'running',
+      post_id bigint references roader_posts(id) on delete set null,
+      quality_score integer,
+      attempt_count integer not null default 0,
+      last_error text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique(account_id, run_date, slot_index)
+    )`,
+    `create index if not exists idx_roader_automation_runs_account_date on roader_automation_runs(account_id, run_date desc)`,
     `create table if not exists roader_metrics (
       id bigserial primary key,
       post_id bigint not null references roader_posts(id) on delete cascade,

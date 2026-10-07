@@ -8,6 +8,9 @@
     },
     "api/setup.mjs": {
       "maxDuration": 10
+    },
+    "api/automation/run.mjs": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -26,6 +29,12 @@
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/automation/run",
+      "schedule": "10 * * * *"
     }
   ]
 }

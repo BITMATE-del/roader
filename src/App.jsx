@@ -833,6 +833,7 @@ function Scheduler({schedules,onRefresh}){
   function statusLabel(status){
     return {
       generation_pending:"생성 대기",
+      connection_required:"Threads 연결 필요",
       running:"생성 중",
       generation_failed:"생성 실패",
       topic_duplicate:"주제 중복",
@@ -862,7 +863,9 @@ function Scheduler({schedules,onRefresh}){
         <td className="text-cell">{s.body||(
           s.status==="quality_failed"
             ?(s.last_error||"품질 기준을 통과하지 못해 다음 자동화에서 다시 보정합니다.")
-            :s.status==="generation_failed"
+            :s.status==="connection_required"
+              ?"Threads 계정 연결이 필요합니다. 계정관리에서 연결해주세요."
+              :s.status==="generation_failed"
               ?(s.last_error||"AI 글 생성 단계에서 실패했습니다. 다음 자동화에서 다시 시도합니다.")
               :s.status==="topic_duplicate"
                 ?(s.last_error||"오늘 이미 사용한 주제와 겹쳐 다른 주제로 다시 시도합니다.")

@@ -10,13 +10,21 @@ function kstNow(){
   return {date:`${m.year}-${m.month}-${m.day}`,hour:Number(m.hour),minute:Number(m.minute)};
 }
 
-function slotsForGoal(goal){
+function slotsForGoal(goal,preferredHours=[],confidence=0){
   const n=Math.max(0,Math.min(8,Number(goal||0)));
   if(!n) return [];
-  if(n===1) return [12];
-  const start=9,end=20,out=[];
-  for(let i=0;i<n;i++) out.push(Math.round(start+(end-start)*(i/(n-1))));
-  return [...new Set(out)];
+  const learned=Number(confidence||0)>=50
+    ? [...new Set((Array.isArray(preferredHours)?preferredHours:[])
+        .map(Number).filter(h=>Number.isInteger(h)&&h>=9&&h<=20))]
+    : [];
+  const base=n===1?[12]:(()=>{
+    const out=[];
+    const start=9,end=20;
+    for(let i=0;i<n;i++) out.push(Math.round(start+(end-start)*(i/(n-1))));
+    return out;
+  })();
+  const merged=[...learned,...base];
+  return [...new Set(merged)].slice(0,n).sort((a,b)=>a-b);
 }
 
 function slotIso(date,hour){
@@ -178,7 +186,11 @@ async function generatePassingDraft({origin,account,postType,recentTexts,exclude
 }
 
 async function planAccount({sql,origin,account,date}){
-  const slots=slotsForGoal(account.daily_post_goal);
+  const slots=slotsForGoal(
+    account.daily_post_goal,
+    account.performance_strategy?.preferred_hours_kst||[],
+    account.performance_confidence
+  );
   const todayRows=await sql(
     `select p.generated_topic,p.body,p.status,s.id as schedule_id
      from roader_posts p
@@ -214,7 +226,15 @@ async function planAccount({sql,origin,account,date}){
     const run=await claimRun(sql,account.id,date,i,slots[i]);
     if(!run){ results.push({slot:i,status:"claimed"}); continue; }
 
-    const postType=pickPostType(account.type_mix,seededPercent(account.id,date,i));
+    const seed=seededPercent(account.id,date,i);
+    const preferredTypes=Array.isArray(account.performance_strategy?.preferred_post_types)
+      ? account.performance_strategy.preferred_post_types.filter(Boolean)
+      : [];
+    const exploreRatio=Math.max(10,Math.min(30,Number(account.performance_strategy?.exploration_ratio||20)));
+    const useLearned=Number(account.performance_confidence||0)>=50 && preferredTypes.length && seed>=exploreRatio;
+    const postType=useLearned
+      ? preferredTypes[seed%preferredTypes.length]
+      : pickPostType(account.type_mix,seed);
     const threshold=Number(account.auto_publish_threshold||90);
     const generated=await generatePassingDraft({
       origin,account,postType,recentTexts,excludeTopics,threshold
@@ -360,9 +380,12 @@ export default async function handler(req,res){
     const accounts=await sql(
       `select a.id,a.name,a.handle,a.sector,a.daily_post_goal,a.cta_ratio,a.threads_user_id,
         coalesce(cp.auto_publish_threshold,90) as auto_publish_threshold,
-        coalesce(cp.type_mix,'{}'::jsonb) as type_mix
+        coalesce(cp.type_mix,'{}'::jsonb) as type_mix,
+        coalesce(pp.strategy,'{}'::jsonb) as performance_strategy,
+        coalesce(pp.confidence,0) as performance_confidence
        from roader_accounts a
        left join roader_content_profiles cp on cp.account_id=a.id
+       left join roader_performance_profiles pp on pp.account_id=a.id
        where a.is_active=true
          and a.daily_post_goal>0
          and a.threads_user_id is not null

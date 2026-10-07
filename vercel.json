@@ -12,7 +12,10 @@
     "api/automation/run.mjs": {
       "maxDuration": 60
     },
-    "api/economy/poll.mjs": {
+    "api/metrics/sync.mjs": {
+      "maxDuration": 60
+    },
+    "api/learning/performance.mjs": {
       "maxDuration": 60
     }
   },
@@ -40,8 +43,12 @@
       "schedule": "10 * * * *"
     },
     {
-      "path": "/api/economy/poll",
-      "schedule": "*/5 * * * *"
+      "path": "/api/metrics/sync",
+      "schedule": "25 */2 * * *"
+    },
+    {
+      "path": "/api/learning/performance",
+      "schedule": "40 22 * * *"
     }
   ]
 }

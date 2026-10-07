@@ -24,12 +24,18 @@ async function fetchInsights(threadId,token){
 
 export default async function handler(req,res){
   try{
-    if(req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
+    if(req.method!=="GET"&&req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
+    if(req.method==="GET"){
+      const secret=process.env.CRON_SECRET||"";
+      if(!secret||String(req.headers.authorization||"")!==`Bearer ${secret}`){
+        return res.status(401).json({ok:false,error:"unauthorized"});
+      }
+    }
     await ensureSchema();
     const sql=client();
 
     const posts=await sql(
-      "select p.id,p.threads_post_id,p.account_id from roader_posts p join roader_accounts a on a.id=p.account_id where p.status='published' and p.threads_post_id is not null and a.threads_access_token_encrypted is not null order by p.published_at desc nulls last limit 100"
+      "select p.id,p.threads_post_id,p.account_id from roader_posts p join roader_accounts a on a.id=p.account_id where p.status='published' and p.threads_post_id is not null and a.threads_access_token_encrypted is not null and p.published_at >= now()-interval '30 days' order by p.published_at desc nulls last limit 200"
     );
 
     let synced=0,failed=0;

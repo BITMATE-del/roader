@@ -421,7 +421,7 @@ export default async function handler(req,res){
     const sql=client();
 
     const rows=await sql(
-      "select a.id,a.name,a.handle,a.sector,a.target_audience,a.tone,a.persona,coalesce(cp.style_rules,'{}'::jsonb) as style_rules,coalesce(cp.min_chars,180) as min_chars,coalesce(cp.max_chars,420) as max_chars,coalesce(cp.type_mix,'{}'::jsonb) as type_mix,coalesce(sp.profile,'{}'::jsonb) as learned_style,coalesce(sp.confidence,0) as style_confidence from roader_accounts a left join roader_content_profiles cp on cp.account_id=a.id left join roader_style_profiles sp on sp.account_id=a.id where a.id=$1",
+      "select a.id,a.name,a.handle,a.sector,a.target_audience,a.tone,a.persona,coalesce(cp.style_rules,'{}'::jsonb) as style_rules,coalesce(cp.min_chars,180) as min_chars,coalesce(cp.max_chars,420) as max_chars,coalesce(cp.type_mix,'{}'::jsonb) as type_mix,coalesce(sp.profile,'{}'::jsonb) as learned_style,coalesce(sp.confidence,0) as style_confidence,coalesce(pp.strategy,'{}'::jsonb) as performance_strategy,coalesce(pp.confidence,0) as performance_confidence,coalesce(pp.sample_count,0) as performance_sample_count from roader_accounts a left join roader_content_profiles cp on cp.account_id=a.id left join roader_style_profiles sp on sp.account_id=a.id left join roader_performance_profiles pp on pp.account_id=a.id where a.id=$1",
       [accountId]
     );
     const account=rows[0];
@@ -435,6 +435,11 @@ export default async function handler(req,res){
     const requestedType=String(body.post_type||"").trim();
     const topicOverride=String(body.topic||"").trim();
     const learned=account.learned_style||{};
+    const performanceStrategy=account.performance_strategy||{};
+    const performanceReady=Number(account.performance_confidence||0)>=50 && Number(account.performance_sample_count||0)>=6;
+    const explorationRatio=Math.max(10,Math.min(30,Number(performanceStrategy.exploration_ratio||20)));
+    const exploreSeed=(accountId*31+Number(new Date().toISOString().slice(8,10))*17)%100;
+    const explorationMode=performanceReady && exploreSeed<explorationRatio;
     const mobile=account.style_rules?.mobile_format||{};
     const sectorText=String(account.sector||"").toLowerCase();
     const isCrypto=/코인|crypto|가상자산|암호화폐/.test(sectorText);
@@ -469,6 +474,10 @@ export default async function handler(req,res){
       "문장 끝을 모두 '~입니다/~합니다/~됩니다'로 맞추지 않는다. 같은 종결어미가 3번 연속 나오면 반드시 다른 자연스러운 표현으로 바꾼다.",
       "'~입니다/~합니다/~됩니다' 같은 종결어미를 연속으로 반복하지 않는다. '~죠', '~보입니다', '~볼 수 있습니다', '~가능성이 있습니다', '~체크해볼 만합니다'처럼 자연스럽게 섞는다.",
       "최근 실제 게시물의 도입부와 소재가 겹치면 다른 소재를 선택한다.",
+      "performance_strategy가 제공되면 실제 계정 성과에서 학습된 글쓰기 전략이므로 우선 참고한다. 단, 시장 사실보다 우선할 수 없고 같은 문구·같은 주제를 복제해서는 안 된다.",
+      "exploration_mode=false이면 성과가 검증된 패턴을 우선 활용한다. exploration_mode=true이면 계정 정체성·품질 기준은 유지하되 새로운 훅·주제·구조를 하나 실험한다.",
+      "avoid_patterns는 과거 성과가 반복적으로 약했던 패턴이므로 특별한 이유가 없으면 피한다.",
+      "winning_patterns는 문장 복사용 예시가 아니라 구조적 힌트로만 사용한다.",
       "댓글은 본문 반복이 아니라 프로필 유입용 1차 댓글이다.",
       "댓글은 단순 설명형 CTA보다 궁금증 유발형 CTA를 우선한다.",
       "댓글 기본 구조: '본문에는 시장 흐름 위주로 적었다' → '실제로는 모든 종목을 같은 기준으로 보지 않는다' → '수급·실적·모멘텀·시장 관심도를 따로 보고 조건이 겹치는 종목만 추린다' → '아직 관심이 크게 붙기 전 구간의 종목을 따로 보고 있다' → '현재 체크 중인 섹터와 종목은 프로필에서 무료로 확인할 수 있다'.",
@@ -547,6 +556,10 @@ export default async function handler(req,res){
       target_length:{min:Math.min(Number(account.min_chars||180),420),max:Math.min(Number(account.max_chars||420),470)},
       mobile_format:mobile,
       learned_style:account.style_confidence>=50?learned:{},
+      performance_strategy:performanceReady?performanceStrategy:{},
+      performance_confidence:Number(account.performance_confidence||0),
+      performance_sample_count:Number(account.performance_sample_count||0),
+      exploration_mode:explorationMode,
       recent_published_posts:recentPosts
     };
 

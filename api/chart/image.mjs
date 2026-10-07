@@ -1,5 +1,23 @@
 import { Resvg } from "@resvg/resvg-js";
 
+let cachedFontBuffers=null;
+
+async function getFontBuffers(){
+  if(cachedFontBuffers) return cachedFontBuffers;
+  const urls=[
+    "https://cdn.jsdelivr.net/gh/fonts-archive/NotoSansKR/NotoSansKR-Regular.otf",
+    "https://cdn.jsdelivr.net/gh/fonts-archive/NotoSansKR/NotoSansKR-Bold.otf"
+  ];
+  const buffers=[];
+  for(const url of urls){
+    const r=await fetch(url);
+    if(!r.ok) throw new Error("chart_font_load_failed");
+    buffers.push(new Uint8Array(await r.arrayBuffer()));
+  }
+  cachedFontBuffers=buffers;
+  return buffers;
+}
+
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[m]));
 const num=v=>Number(v||0);
 const won=v=>num(v).toLocaleString("ko-KR")+"원";
@@ -58,19 +76,19 @@ function buildSvg({coinName,symbol,current,change,support,resistance,rsi,rows}){
   <rect width="1080" height="1350" fill="url(#bg)"/>
   <rect x="20" y="20" width="1040" height="1310" rx="28" fill="none" stroke="#163b5c" stroke-width="2"/>
 
-  <text x="45" y="104" fill="url(#cyan)" font-family="Arial,sans-serif" font-size="66" font-weight="800">${title} (${sym})</text>
-  <text x="48" y="146" fill="#91a9c1" font-family="Arial,sans-serif" font-size="24">KRW · UPBIT · 1시간봉</text>
+  <text x="45" y="104" fill="url(#cyan)" font-family="Noto Sans KR" font-size="66" font-weight="800">${title} (${sym})</text>
+  <text x="48" y="146" fill="#91a9c1" font-family="Noto Sans KR" font-size="24">KRW · UPBIT · 1시간봉</text>
 
   <rect x="42" y="180" width="660" height="112" rx="20" fill="#08233a" stroke="#1e7da8"/>
-  <text x="68" y="225" fill="#c8d9e8" font-family="Arial,sans-serif" font-size="25" font-weight="700">현재가</text>
-  <text x="185" y="257" fill="#65e7ef" font-family="Arial,sans-serif" font-size="58" font-weight="900">${won(current)}</text>
-  <text x="495" y="253" fill="${upColor}" font-family="Arial,sans-serif" font-size="28" font-weight="800">${changeText}</text>
+  <text x="68" y="225" fill="#c8d9e8" font-family="Noto Sans KR" font-size="25" font-weight="700">현재가</text>
+  <text x="185" y="257" fill="#65e7ef" font-family="Noto Sans KR" font-size="58" font-weight="900">${won(current)}</text>
+  <text x="495" y="253" fill="${upColor}" font-family="Noto Sans KR" font-size="28" font-weight="800">${changeText}</text>
 
   <rect x="722" y="180" width="315" height="112" rx="20" fill="#071b2d" stroke="#163b5c"/>
-  <text x="750" y="224" fill="#c8d9e8" font-family="Arial,sans-serif" font-size="22">1차 저항</text>
-  <text x="1010" y="224" text-anchor="end" fill="#ff5264" font-family="Arial,sans-serif" font-size="24" font-weight="800">${won(resistance)}</text>
-  <text x="750" y="266" fill="#c8d9e8" font-family="Arial,sans-serif" font-size="22">1차 지지</text>
-  <text x="1010" y="266" text-anchor="end" fill="#3184ff" font-family="Arial,sans-serif" font-size="24" font-weight="800">${won(support)}</text>
+  <text x="750" y="224" fill="#c8d9e8" font-family="Noto Sans KR" font-size="22">1차 저항</text>
+  <text x="1010" y="224" text-anchor="end" fill="#ff5264" font-family="Noto Sans KR" font-size="24" font-weight="800">${won(resistance)}</text>
+  <text x="750" y="266" fill="#c8d9e8" font-family="Noto Sans KR" font-size="22">1차 지지</text>
+  <text x="1010" y="266" text-anchor="end" fill="#3184ff" font-family="Noto Sans KR" font-size="24" font-weight="800">${won(support)}</text>
 
   <rect x="${chart.x}" y="${chart.y}" width="${chart.w}" height="${chart.h}" rx="18" fill="#061726" stroke="#174263"/>
   ${[0,1,2,3,4,5].map(i=>`<line x1="${plot.x}" y1="${plot.y+i*plot.h/5}" x2="${plot.x+plot.w}" y2="${plot.y+i*plot.h/5}" stroke="#173149"/>`).join("")}
@@ -80,32 +98,32 @@ function buildSvg({coinName,symbol,current,change,support,resistance,rsi,rows}){
   <line x1="${plot.x}" y1="${supportY}" x2="${plot.x+plot.w}" y2="${supportY}" stroke="#2385ff" stroke-width="3" stroke-dasharray="10 8"/>
   <line x1="${plot.x}" y1="${currentY}" x2="${plot.x+plot.w}" y2="${currentY}" stroke="#18c9b6" stroke-width="2" stroke-dasharray="4 5"/>
 
-  <rect x="825" y="${resistanceY-18}" width="185" height="38" rx="8" fill="#e72e48"/><text x="917" y="${resistanceY+9}" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="800">저항 ${won(resistance)}</text>
-  <rect x="825" y="${currentY-18}" width="185" height="38" rx="8" fill="#0f9f90"/><text x="917" y="${currentY+9}" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="800">현재 ${won(current)}</text>
-  <rect x="825" y="${supportY-18}" width="185" height="38" rx="8" fill="#176de8"/><text x="917" y="${supportY+9}" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="800">지지 ${won(support)}</text>
+  <rect x="825" y="${resistanceY-18}" width="185" height="38" rx="8" fill="#e72e48"/><text x="917" y="${resistanceY+9}" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="800">저항 ${won(resistance)}</text>
+  <rect x="825" y="${currentY-18}" width="185" height="38" rx="8" fill="#0f9f90"/><text x="917" y="${currentY+9}" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="800">현재 ${won(current)}</text>
+  <rect x="825" y="${supportY-18}" width="185" height="38" rx="8" fill="#176de8"/><text x="917" y="${supportY+9}" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="800">지지 ${won(support)}</text>
 
-  <text x="55" y="820" fill="#cbd7e4" font-family="Arial,sans-serif" font-size="21">거래량</text>
+  <text x="55" y="820" fill="#cbd7e4" font-family="Noto Sans KR" font-size="21">거래량</text>
   ${volSvg}
   <line x1="55" y1="866" x2="1010" y2="866" stroke="#173149"/>
 
   <rect x="38" y="920" width="500" height="360" rx="20" fill="#071b2d" stroke="#174263"/>
-  <text x="65" y="970" fill="#eef7ff" font-family="Arial,sans-serif" font-size="30" font-weight="800">핵심 가격대</text>
-  <text x="68" y="1030" fill="#a8bdd0" font-family="Arial,sans-serif" font-size="22">현재가</text><text x="500" y="1030" text-anchor="end" fill="#65e7ef" font-family="Arial,sans-serif" font-size="31" font-weight="900">${won(current)}</text>
-  <text x="68" y="1085" fill="#a8bdd0" font-family="Arial,sans-serif" font-size="22">1차 저항</text><text x="500" y="1085" text-anchor="end" fill="#ff5264" font-family="Arial,sans-serif" font-size="28" font-weight="900">${won(resistance)}</text>
-  <text x="68" y="1140" fill="#a8bdd0" font-family="Arial,sans-serif" font-size="22">1차 지지</text><text x="500" y="1140" text-anchor="end" fill="#3184ff" font-family="Arial,sans-serif" font-size="28" font-weight="900">${won(support)}</text>
-  <rect x="64" y="1180" width="210" height="70" rx="14" fill="#0a2942"/><text x="84" y="1212" fill="#a8bdd0" font-family="Arial,sans-serif" font-size="18">RSI (14)</text><text x="84" y="1241" fill="#c875ff" font-family="Arial,sans-serif" font-size="28" font-weight="900">${rsiVal}</text>
-  <rect x="290" y="1180" width="220" height="70" rx="14" fill="#0a2942"/><text x="310" y="1212" fill="#a8bdd0" font-family="Arial,sans-serif" font-size="18">기준</text><text x="310" y="1241" fill="#60e3d6" font-family="Arial,sans-serif" font-size="22" font-weight="800">UPBIT 실시간</text>
+  <text x="65" y="970" fill="#eef7ff" font-family="Noto Sans KR" font-size="30" font-weight="800">핵심 가격대</text>
+  <text x="68" y="1030" fill="#a8bdd0" font-family="Noto Sans KR" font-size="22">현재가</text><text x="500" y="1030" text-anchor="end" fill="#65e7ef" font-family="Noto Sans KR" font-size="31" font-weight="900">${won(current)}</text>
+  <text x="68" y="1085" fill="#a8bdd0" font-family="Noto Sans KR" font-size="22">1차 저항</text><text x="500" y="1085" text-anchor="end" fill="#ff5264" font-family="Noto Sans KR" font-size="28" font-weight="900">${won(resistance)}</text>
+  <text x="68" y="1140" fill="#a8bdd0" font-family="Noto Sans KR" font-size="22">1차 지지</text><text x="500" y="1140" text-anchor="end" fill="#3184ff" font-family="Noto Sans KR" font-size="28" font-weight="900">${won(support)}</text>
+  <rect x="64" y="1180" width="210" height="70" rx="14" fill="#0a2942"/><text x="84" y="1212" fill="#a8bdd0" font-family="Noto Sans KR" font-size="18">RSI (14)</text><text x="84" y="1241" fill="#c875ff" font-family="Noto Sans KR" font-size="28" font-weight="900">${rsiVal}</text>
+  <rect x="290" y="1180" width="220" height="70" rx="14" fill="#0a2942"/><text x="310" y="1212" fill="#a8bdd0" font-family="Noto Sans KR" font-size="18">기준</text><text x="310" y="1241" fill="#60e3d6" font-family="Noto Sans KR" font-size="22" font-weight="800">UPBIT 실시간</text>
 
   <rect x="556" y="920" width="486" height="360" rx="20" fill="#071b2d" stroke="#174263"/>
-  <text x="585" y="970" fill="#eef7ff" font-family="Arial,sans-serif" font-size="30" font-weight="800">관전 포인트</text>
-  <circle cx="605" cy="1030" r="23" fill="#176de8"/><text x="605" y="1038" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">1</text>
-  <text x="648" y="1025" fill="#f4f8fb" font-family="Arial,sans-serif" font-size="23" font-weight="800">${won(support)} 지지 여부</text><text x="648" y="1058" fill="#8fa7bc" font-family="Arial,sans-serif" font-size="18">이탈 시 단기 조정 가능성</text>
-  <circle cx="605" cy="1110" r="23" fill="#ef3e56"/><text x="605" y="1118" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">2</text>
-  <text x="648" y="1105" fill="#f4f8fb" font-family="Arial,sans-serif" font-size="23" font-weight="800">${won(resistance)} 돌파 확인</text><text x="648" y="1138" fill="#8fa7bc" font-family="Arial,sans-serif" font-size="18">돌파 시 상승 흐름 강화 가능</text>
-  <circle cx="605" cy="1190" r="23" fill="#176de8"/><text x="605" y="1198" text-anchor="middle" fill="#fff" font-family="Arial,sans-serif" font-size="20" font-weight="900">3</text>
-  <text x="648" y="1185" fill="#f4f8fb" font-family="Arial,sans-serif" font-size="23" font-weight="800">거래량 · RSI 흐름 체크</text><text x="648" y="1218" fill="#8fa7bc" font-family="Arial,sans-serif" font-size="18">가격 움직임과 동반되는지 확인</text>
+  <text x="585" y="970" fill="#eef7ff" font-family="Noto Sans KR" font-size="30" font-weight="800">관전 포인트</text>
+  <circle cx="605" cy="1030" r="23" fill="#176de8"/><text x="605" y="1038" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="900">1</text>
+  <text x="648" y="1025" fill="#f4f8fb" font-family="Noto Sans KR" font-size="23" font-weight="800">${won(support)} 지지 여부</text><text x="648" y="1058" fill="#8fa7bc" font-family="Noto Sans KR" font-size="18">이탈 시 단기 조정 가능성</text>
+  <circle cx="605" cy="1110" r="23" fill="#ef3e56"/><text x="605" y="1118" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="900">2</text>
+  <text x="648" y="1105" fill="#f4f8fb" font-family="Noto Sans KR" font-size="23" font-weight="800">${won(resistance)} 돌파 확인</text><text x="648" y="1138" fill="#8fa7bc" font-family="Noto Sans KR" font-size="18">돌파 시 상승 흐름 강화 가능</text>
+  <circle cx="605" cy="1190" r="23" fill="#176de8"/><text x="605" y="1198" text-anchor="middle" fill="#fff" font-family="Noto Sans KR" font-size="20" font-weight="900">3</text>
+  <text x="648" y="1185" fill="#f4f8fb" font-family="Noto Sans KR" font-size="23" font-weight="800">거래량 · RSI 흐름 체크</text><text x="648" y="1218" fill="#8fa7bc" font-family="Noto Sans KR" font-size="18">가격 움직임과 동반되는지 확인</text>
 
-  <text x="540" y="1310" text-anchor="middle" fill="#607f99" font-family="Arial,sans-serif" font-size="16">실시간 시장 데이터 기반 참고용 분석 이미지</text>
+  <text x="540" y="1310" text-anchor="middle" fill="#607f99" font-family="Noto Sans KR" font-size="16">실시간 시장 데이터 기반 참고용 분석 이미지</text>
   </svg>`;
 }
 
@@ -125,7 +143,16 @@ export default async function handler(req,res){
       rsi:Number(req.query?.rsi),
       rows
     });
-    const png=new Resvg(svg,{fitTo:{mode:"width",value:1080},font:{loadSystemFonts:true,defaultFontFamily:"Arial"}}).render().asPng();
+    const fontBuffers=await getFontBuffers();
+    const png=new Resvg(svg,{
+      fitTo:{mode:"width",value:1080},
+      font:{
+        fontBuffers,
+        loadSystemFonts:false,
+        defaultFontFamily:"Noto Sans KR",
+        sansSerifFamily:"Noto Sans KR"
+      }
+    }).render().asPng();
     res.setHeader("content-type","image/png");
     res.setHeader("cache-control","public, max-age=60, s-maxage=60");
     return res.status(200).send(Buffer.from(png));

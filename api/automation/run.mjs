@@ -202,13 +202,18 @@ async function generatePassingDraft({origin,account,postType,recentTexts,exclude
       recentTexts
     });
 
-    if(repairedQuality.status!=="blocked" && repairedQuality.score>=threshold){
-      return {draft:repairedDraft,quality:repairedQuality,attempt:2};
+    if(repairedQuality.status!=="blocked"){
+      return {
+        draft:repairedDraft,
+        quality:repairedQuality,
+        attempt:2,
+        below_target:repairedQuality.score<threshold
+      };
     }
 
     return {
       failed:true,
-      error:new Error("quality_below_threshold_after_repair"),
+      error:new Error("quality_blocked_after_repair"),
       attempt:2,
       quality:repairedQuality,
       draft:repairedDraft

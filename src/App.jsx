@@ -791,9 +791,26 @@ function Scheduler({schedules,onRefresh}){
     recentTexts:[]
   }),[editText]);
 
+  const now=Date.now();
+  const visibleSchedules=useMemo(
+    ()=>schedules.filter(s=>{
+      const t=new Date(s.scheduled_at).getTime();
+      if(!Number.isFinite(t)) return true;
+      return t>=now-5*60*1000 || ["scheduled","publishing","publish_failed"].includes(String(s.status));
+    }),
+    [schedules,now]
+  );
+
+  const stats=useMemo(()=>({
+    total:visibleSchedules.length,
+    ready:visibleSchedules.filter(s=>s.status==="scheduled").length,
+    waiting:visibleSchedules.filter(s=>["generation_pending","running"].includes(String(s.status))).length,
+    issues:visibleSchedules.filter(s=>["quality_failed","generation_failed","topic_duplicate","publish_failed","connection_required"].includes(String(s.status))).length
+  }),[visibleSchedules]);
+
   const needsPreparation=useMemo(
-    ()=>schedules.some(s=>["generation_pending","quality_failed","plan_failed","publish_failed"].includes(String(s.status))),
-    [schedules]
+    ()=>visibleSchedules.some(s=>["generation_pending","quality_failed","generation_failed","topic_duplicate","plan_failed","publish_failed"].includes(String(s.status))),
+    [visibleSchedules]
   );
 
   async function prepareNow(silent=false){
@@ -804,11 +821,8 @@ function Scheduler({schedules,onRefresh}){
       const r=await api("/api/automation/prepare",{method:"POST",body:JSON.stringify({})});
       const planning=(r.planning||[]).flatMap(x=>x.rows||[]);
       const scheduled=planning.filter(x=>x.status==="scheduled").length;
-      const failed=planning.filter(x=>["quality_failed","generation_failed","topic_duplicate"].includes(x.status));
-      if(!silent){
-        const firstError=failed.find(x=>x.error)?.error||"";
-        setMessage(`예약 준비 완료 · 생성 ${scheduled}개${failed.length? ` · 재시도 ${failed.length}개`:""}${firstError?" · "+firstError:""}`);
-      }
+      const retried=planning.filter(x=>["quality_failed","generation_failed","topic_duplicate"].includes(x.status)).length;
+      if(!silent) setMessage(`예약 준비 완료 · 예약 ${scheduled}개${retried?` · 재시도 ${retried}개`:""}`);
       await onRefresh();
     }catch(e){
       if(!silent) setMessage("예약 준비 실패 · "+(e.details||e.message||"server_error"));
@@ -833,9 +847,8 @@ function Scheduler({schedules,onRefresh}){
 
   async function saveEdit(){
     if(!editing?.post_id||!editText.trim()) return;
-    const threshold=Number(editing.auto_publish_threshold||90);
-    if(editQuality.status==="blocked"||editQuality.score<threshold){
-      setMessage(`품질 ${editQuality.score}점 · 자동게시 기준 ${threshold}점 이상으로 수정해주세요.`);
+    if(editQuality.status==="blocked"){
+      setMessage("치명적 품질 문제가 있어 저장할 수 없습니다. 표시된 차단 사유만 수정해주세요.");
       return;
     }
     setSaving(true);setMessage("");
@@ -861,10 +874,10 @@ function Scheduler({schedules,onRefresh}){
       generation_pending:"생성 대기",
       connection_required:"Threads 연결 필요",
       running:"생성 중",
-      generation_failed:"생성 실패",
-      topic_duplicate:"주제 중복",
-      quality_failed:"품질 미달",
-      plan_failed:"생성 실패",
+      generation_failed:"생성 재시도",
+      topic_duplicate:"다른 주제 탐색",
+      quality_failed:"내용 보정 필요",
+      plan_failed:"생성 재시도",
       scheduled:"게시 예정",
       publishing:"게시 중",
       published:"게시 완료",
@@ -872,40 +885,75 @@ function Scheduler({schedules,onRefresh}){
     }[String(status)]||String(status||"-");
   }
 
+  function statusTone(status){
+    if(status==="scheduled"||status==="published") return "ready";
+    if(["generation_pending","running","topic_duplicate"].includes(String(status))) return "waiting";
+    return "issue";
+  }
+
   return <>
-    <div className="hero-row">
-      <div><h1>게시 스케줄러</h1><p>오늘 게시 슬롯과 자동 생성 상태를 모두 표시합니다. 게시 예정 글은 게시 전 수정할 수 있습니다.</p></div>
+    <div className="hero-row scheduler-hero">
+      <div><h1>게시 스케줄러</h1><p>앞으로 올라갈 게시물만 한눈에 확인합니다. 품질점수는 개선 기준이고, 치명적 문제가 없으면 자동 게시됩니다.</p></div>
       <button className="primary" onClick={()=>prepareNow(false)} disabled={preparing}>
         {preparing?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>}
         {preparing?"예약글 준비 중":"예약글 지금 준비"}
       </button>
     </div>
+
+    <div className="scheduler-summary">
+      <div><span>남은 슬롯</span><b>{stats.total}</b></div>
+      <div><span>게시 예정</span><b>{stats.ready}</b></div>
+      <div><span>생성 중</span><b>{stats.waiting}</b></div>
+      <div><span>확인 필요</span><b>{stats.issues}</b></div>
+    </div>
+
     {message&&<div className="save-message">{message}</div>}
-    <div className="panel">{schedules.length===0?<EmptyState title="오늘 게시 슬롯이 없습니다." desc="계정의 하루 게시 목표가 0이거나 자동 운영이 꺼져 있는지 확인해주세요."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>주제</th><th>게시물</th><th>상태</th><th>품질</th><th>수정</th></tr></thead><tbody>
-      {schedules.map(s=><tr key={s.id}>
-        <td>{fmtDate(s.scheduled_at)}</td>
-        <td>{s.account_name}</td>
-        <td>{s.generated_topic||"-"}</td>
-        <td className="text-cell">{s.body||(
-          s.status==="quality_failed"
-            ?(s.last_error||"품질 기준을 통과하지 못해 다음 자동화에서 다시 보정합니다.")
-            :s.status==="connection_required"
-              ?"Threads 계정 연결이 필요합니다. 계정관리에서 연결해주세요."
-              :s.status==="generation_failed"
-              ?(s.last_error||"AI 글 생성 단계에서 실패했습니다. 다음 자동화에서 다시 시도합니다.")
-              :s.status==="topic_duplicate"
-                ?(s.last_error||"오늘 이미 사용한 주제와 겹쳐 다른 주제로 다시 시도합니다.")
-                :s.status==="generation_pending"
-                  ?"아직 글을 생성하지 않았습니다."
-                  :s.status==="running"
-                    ?"현재 글을 생성하고 있습니다."
-                    :s.last_error||"-"
-        )}</td>
-        <td><StatusBadge>{statusLabel(s.status)}</StatusBadge></td>
-        <td>{s.quality_score??"-"}</td>
-        <td>{s.status==="scheduled"&&s.post_id?<button className="ghost" onClick={()=>openEdit(s)}>수정</button>:"-"}</td>
-      </tr>)}
-    </tbody></table></div>}</div>
+
+    {visibleSchedules.length===0
+      ?<div className="panel"><EmptyState title="남은 게시 슬롯이 없습니다." desc="오늘 예정된 게시가 모두 끝났거나 자동 운영 대상 계정이 없습니다."/></div>
+      :<div className="scheduler-grid">
+        {visibleSchedules.map(s=><article className={`schedule-card ${statusTone(s.status)}`} key={s.id}>
+          <div className="schedule-card-head">
+            <div>
+              <span className="schedule-time">{new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(s.scheduled_at))}</span>
+              <b>{s.account_name}</b>
+            </div>
+            <StatusBadge>{statusLabel(s.status)}</StatusBadge>
+          </div>
+
+          <div className="schedule-topic">{s.generated_topic||(
+            s.status==="connection_required"?"계정 연결 필요":
+            s.status==="generation_pending"?"주제 선정 대기":
+            s.status==="running"?"주제 선정 중":"자동 생성 대기"
+          )}</div>
+
+          <div className="schedule-body">
+            {s.body
+              ?String(s.body).slice(0,210)+(String(s.body).length>210?"…":"")
+              :s.status==="connection_required"
+                ?"계정관리에서 Threads 연결을 완료하면 자동 생성이 시작됩니다."
+                :s.status==="quality_failed"
+                  ?(s.last_error||"치명적 차단 사유를 보정한 뒤 다시 예약합니다.")
+                  :s.status==="generation_failed"
+                    ?(s.last_error||"생성에 실패해 다음 실행에서 자동 재시도합니다.")
+                    :s.status==="topic_duplicate"
+                      ?"오늘 사용한 주제와 겹쳐 다른 주제를 찾고 있습니다."
+                      :"자동 생성기가 게시물을 준비하고 있습니다."
+            }
+          </div>
+
+          <div className="schedule-card-foot">
+            <div className="schedule-quality">
+              <span>품질</span>
+              <b>{s.quality_score??"-"}</b>
+              <small>{s.quality_score!=null?(Number(s.quality_score)>=90?"목표 달성":"개선 중"):"대기"}</small>
+            </div>
+            {s.status==="scheduled"&&s.post_id
+              ?<button className="ghost" onClick={()=>openEdit(s)}>수정</button>
+              :null}
+          </div>
+        </article>)}
+      </div>}
 
     {editing&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setEditing(null)}>
       <div className="modal-card schedule-edit-modal">
@@ -914,13 +962,15 @@ function Scheduler({schedules,onRefresh}){
         <textarea rows="14" value={editText} onChange={e=>setEditText(e.target.value)}/>
         <label>1차 댓글</label>
         <textarea rows="6" value={editReply} onChange={e=>setEditReply(e.target.value)}/>
-        <div className={editQuality.score>=Number(editing.auto_publish_threshold||90)&&editQuality.status!=="blocked"?"save-message":"form-error"}>
-          품질 {editQuality.score}점 / 자동게시 기준 {editing.auto_publish_threshold||90}점
-          {editQuality.blockers?.length? " · "+editQuality.blockers.join(" · "):""}
+        <div className={editQuality.status!=="blocked"?"save-message":"form-error"}>
+          현재 품질 {editQuality.score}점 / 목표 {editing.auto_publish_threshold||90}점
+          {editQuality.status==="blocked"
+            ?(editQuality.blockers?.length?" · "+editQuality.blockers.join(" · "):" · 게시 차단 사유가 있습니다.")
+            :" · 치명적 문제 없음, 저장 가능"}
         </div>
         <div className="modal-actions">
           <button className="ghost" onClick={()=>setEditing(null)}>취소</button>
-          <button className="primary" onClick={saveEdit} disabled={saving||editQuality.status==="blocked"||editQuality.score<Number(editing.auto_publish_threshold||90)}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 수정 저장</button>
+          <button className="primary" onClick={saveEdit} disabled={saving||editQuality.status==="blocked"}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 수정 저장</button>
         </div>
       </div>
     </div>}

@@ -11,6 +11,9 @@
     },
     "api/automation/run.mjs": {
       "maxDuration": 60
+    },
+    "api/economy/poll.mjs": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -35,6 +38,10 @@
     {
       "path": "/api/automation/run",
       "schedule": "10 * * * *"
+    },
+    {
+      "path": "/api/economy/poll",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

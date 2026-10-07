@@ -80,6 +80,7 @@ async function claimRun(sql,accountId,date,slotIndex,slotHour){
      on conflict (account_id,run_date,slot_index)
      do update set status='running',attempt_count=0,last_error=null,updated_at=now()
        where roader_automation_runs.status in ('quality_failed','plan_failed','publish_failed')
+          or (roader_automation_runs.status='running' and roader_automation_runs.updated_at < now()-interval '10 minutes')
      returning *`,
     [accountId,date,slotIndex,slotHour]
   );
@@ -219,12 +220,23 @@ async function planAccount({sql,origin,account,date}){
   const active=new Map(existing.filter(r=>["scheduled","published","publishing"].includes(String(r.status))).map(r=>[Number(r.slot_index),r]));
 
   const results=[];
+  let generatedThisRun=0;
+  const currentKstHour=Number(new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Seoul",hour:"2-digit",hour12:false}).format(new Date()));
 
   for(let i=0;i<slots.length;i++){
     if(active.has(i)){ results.push({slot:i,status:"already_planned"}); continue; }
+    if(slots[i] <= currentKstHour){
+      results.push({slot:i,status:"past_slot_skipped"});
+      continue;
+    }
+    if(generatedThisRun>=2){
+      results.push({slot:i,status:"deferred_to_next_run"});
+      continue;
+    }
 
     const run=await claimRun(sql,account.id,date,i,slots[i]);
     if(!run){ results.push({slot:i,status:"claimed"}); continue; }
+    generatedThisRun++;
 
     const seed=seededPercent(account.id,date,i);
     const preferredTypes=Array.isArray(account.performance_strategy?.preferred_post_types)

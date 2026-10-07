@@ -10,7 +10,7 @@
       "maxDuration": 10
     },
     "api/automation/run.mjs": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/metrics/sync.mjs": {
       "maxDuration": 60
@@ -40,7 +40,7 @@
   "crons": [
     {
       "path": "/api/automation/run",
-      "schedule": "10 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/metrics/sync",

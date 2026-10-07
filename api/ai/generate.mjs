@@ -434,6 +434,9 @@ export default async function handler(req,res){
 
     const requestedType=String(body.post_type||"").trim();
     const topicOverride=String(body.topic||"").trim();
+    const excludeTopics=Array.isArray(body.exclude_topics)
+      ? body.exclude_topics.map(v=>String(v||"").trim()).filter(Boolean).slice(0,30)
+      : [];
     const learned=account.learned_style||{};
     const performanceStrategy=account.performance_strategy||{};
     const performanceReady=Number(account.performance_confidence||0)>=50 && Number(account.performance_sample_count||0)>=6;

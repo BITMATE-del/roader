@@ -51,6 +51,39 @@ function normalizeTopic(v){
   return String(v||"").toLowerCase().replace(/\s+/g," ").replace(/[^0-9a-z가-힣 ]/g,"").trim();
 }
 
+function normalizeBodyForQuality(value){
+  const text=String(value||"").trim();
+  if(!text) return "";
+
+  const hasBlankLine=/\n\s*\n/.test(text);
+  const simpleLines=text.split("\n").map(v=>v.trim()).filter(Boolean);
+
+  let blocks;
+  if(!hasBlankLine && simpleLines.length>=4){
+    blocks=simpleLines;
+  }else{
+    blocks=text.split(/\n\s*\n/).map(v=>v.trim()).filter(Boolean);
+  }
+
+  const normalized=[];
+  for(const block of blocks){
+    const sentences=(block.match(/[^.!?。！？]+(?:[.!?。！？]+|$)/g)||[])
+      .map(v=>v.trim())
+      .filter(Boolean);
+
+    if(sentences.length<=2){
+      normalized.push(block);
+      continue;
+    }
+
+    for(let i=0;i<sentences.length;i+=2){
+      normalized.push(sentences.slice(i,i+2).join(" "));
+    }
+  }
+
+  return normalized.join("\n\n").trim();
+}
+
 async function callJson(url,options={}){
   const r=await fetch(url,{
     headers:{"content-type":"application/json",...(options.headers||{})},
@@ -133,6 +166,7 @@ async function generatePassingDraft({origin,account,postType,recentTexts,exclude
     };
   }
 
+  draft={...draft,body:normalizeBodyForQuality(draft.body)};
   quality=scorePost({
     text:String(draft.body||""),
     mediaMode:"text",
@@ -156,7 +190,11 @@ async function generatePassingDraft({origin,account,postType,recentTexts,exclude
       })
     });
 
-    const repairedDraft={...draft,body:repaired.body||draft.body,reply:repaired.reply||draft.reply};
+    const repairedDraft={
+      ...draft,
+      body:normalizeBodyForQuality(repaired.body||draft.body),
+      reply:repaired.reply||draft.reply
+    };
     const repairedQuality=scorePost({
       text:String(repairedDraft.body||""),
       mediaMode:"text",

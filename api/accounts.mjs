@@ -46,6 +46,30 @@ export default async function handler(req, res) {
       return res.status(201).json({ ok: true, account });
     }
 
+    if (req.method === "DELETE") {
+      const body = req.body || {};
+      const id = Number(body.id || req.query?.id);
+      if (!id) return res.status(400).json({ ok: false, error: "id_required" });
+
+      const current = await sql(
+        "select id,name,handle,telegram_source_code from roader_accounts where id=$1",
+        [id]
+      );
+      if (!current[0]) return res.status(404).json({ ok: false, error: "not_found" });
+
+      const account = current[0];
+      await sql("delete from roader_accounts where id=$1", [id]);
+
+      return res.status(200).json({
+        ok: true,
+        deleted: {
+          id: account.id,
+          name: account.name,
+          handle: account.handle
+        }
+      });
+    }
+
     if (req.method === "PATCH") {
       const body = req.body || {};
       const id = Number(body.id);

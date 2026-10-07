@@ -29,6 +29,7 @@ export default async function handler(req,res){
     const text=String(body.body||"").trim();
     const replyText=String(body.reply_text||"").trim();
     const mediaMode=String(body.media_mode||"text");
+    const existingPostId=Number(body.post_id||0);
 
     if(!accountId||!text) return res.status(400).json({ok:false,error:"account_id_and_body_required"});
     if(mediaMode!=="text") return res.status(400).json({ok:false,error:"text_only_for_now"});
@@ -67,20 +68,52 @@ export default async function handler(req,res){
       return res.status(400).json({ok:false,error:"threads_account_not_connected"});
     }
 
-    const inserted=await sql(
-      "insert into roader_posts (account_id,post_type,media_mode,body,quality_score,quality_status,quality_details,status,source_code) values ($1,$2,$3,$4,$5,$6,$7::jsonb,'publishing',$8) returning id",
-      [
-        accountId,
-        String(body.post_type||"정보형"),
-        mediaMode,
-        text,
-        body.quality_score??null,
-        body.quality_status??null,
-        JSON.stringify(body.quality_details||{}),
-        String(account.handle||"").replace(/^@/,"")
-      ]
-    );
-    postId=inserted[0]?.id||null;
+    if(existingPostId){
+      const existingRows=await sql(
+        "select id,account_id,status from roader_posts where id=$1 limit 1",
+        [existingPostId]
+      );
+      const existing=existingRows[0];
+      if(!existing||Number(existing.account_id)!==accountId){
+        return res.status(404).json({ok:false,error:"scheduled_post_not_found"});
+      }
+      if(existing.status==="published"){
+        return res.status(409).json({ok:false,error:"scheduled_post_already_published"});
+      }
+      postId=existingPostId;
+      await sql(
+        `update roader_posts
+         set post_type=$1,media_mode=$2,body=$3,reply_text=$4,quality_score=$5,
+             quality_status=$6,quality_details=$7::jsonb,status='publishing',updated_at=now()
+         where id=$8`,
+        [
+          String(body.post_type||"정보형"),
+          mediaMode,
+          text,
+          replyText,
+          body.quality_score??null,
+          body.quality_status??null,
+          JSON.stringify(body.quality_details||{}),
+          postId
+        ]
+      );
+    }else{
+      const inserted=await sql(
+        "insert into roader_posts (account_id,post_type,media_mode,body,reply_text,quality_score,quality_status,quality_details,status,source_code) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'publishing',$9) returning id",
+        [
+          accountId,
+          String(body.post_type||"정보형"),
+          mediaMode,
+          text,
+          replyText,
+          body.quality_score??null,
+          body.quality_status??null,
+          JSON.stringify(body.quality_details||{}),
+          String(account.handle||"").replace(/^@/,"")
+        ]
+      );
+      postId=inserted[0]?.id||null;
+    }
 
     let token;
     try{

@@ -4,34 +4,29 @@ import { scorePost } from "../../src/lib/quality.js";
 function kstNow(){
   const parts=new Intl.DateTimeFormat("en-US",{
     timeZone:"Asia/Seoul",
-    year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false
+    year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false
   }).formatToParts(new Date());
-  const map=Object.fromEntries(parts.map(p=>[p.type,p.value]));
-  return {
-    date:`${map.year}-${map.month}-${map.day}`,
-    hour:Number(map.hour)
-  };
+  const m=Object.fromEntries(parts.map(p=>[p.type,p.value]));
+  return {date:`${m.year}-${m.month}-${m.day}`,hour:Number(m.hour),minute:Number(m.minute)};
 }
 
 function slotsForGoal(goal){
   const n=Math.max(0,Math.min(8,Number(goal||0)));
   if(!n) return [];
   if(n===1) return [12];
-  const start=9,end=20;
-  const out=[];
-  for(let i=0;i<n;i++){
-    out.push(Math.round(start+(end-start)*(i/(n-1))));
-  }
+  const start=9,end=20,out=[];
+  for(let i=0;i<n;i++) out.push(Math.round(start+(end-start)*(i/(n-1))));
   return [...new Set(out)];
+}
+
+function slotIso(date,hour){
+  return `${date}T${String(hour).padStart(2,"0")}:10:00+09:00`;
 }
 
 function seededPercent(accountId,date,slot){
   const s=`${accountId}-${date}-${slot}`;
   let h=2166136261;
-  for(let i=0;i<s.length;i++){
-    h^=s.charCodeAt(i);
-    h=Math.imul(h,16777619);
-  }
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
   return Math.abs(h)%100;
 }
 
@@ -40,11 +35,12 @@ function pickPostType(typeMix,seed){
   if(!entries.length) return "후킹형";
   const total=entries.reduce((a,[,v])=>a+Number(v),0);
   let x=(seed/100)*total;
-  for(const [name,w] of entries){
-    x-=Number(w);
-    if(x<=0) return name;
-  }
+  for(const [name,w] of entries){ x-=Number(w); if(x<=0) return name; }
   return entries[0][0];
+}
+
+function normalizeTopic(v){
+  return String(v||"").toLowerCase().replace(/\s+/g," ").replace(/[^0-9a-z가-힣 ]/g,"").trim();
 }
 
 async function callJson(url,options={}){
@@ -71,9 +67,11 @@ function originFromReq(req){
 async function claimRun(sql,accountId,date,slotIndex,slotHour){
   const rows=await sql(
     `insert into roader_automation_runs
-      (account_id,run_date,slot_index,slot_hour,status,attempt_count)
+       (account_id,run_date,slot_index,slot_hour,status,attempt_count)
      values ($1,$2::date,$3,$4,'running',0)
-     on conflict (account_id,run_date,slot_index) do nothing
+     on conflict (account_id,run_date,slot_index)
+     do update set status='running',attempt_count=0,last_error=null,updated_at=now()
+       where roader_automation_runs.status in ('quality_failed','plan_failed','publish_failed')
      returning *`,
     [accountId,date,slotIndex,slotHour]
   );
@@ -81,47 +79,39 @@ async function claimRun(sql,accountId,date,slotIndex,slotHour){
 }
 
 async function finishRun(sql,id,patch){
-  const status=String(patch.status||"failed");
-  const postId=patch.post_id||null;
-  const quality=patch.quality_score??null;
-  const attempts=Number(patch.attempt_count||0);
-  const error=patch.last_error?String(patch.last_error).slice(0,1800):null;
   await sql(
     `update roader_automation_runs
      set status=$1,post_id=$2,quality_score=$3,attempt_count=$4,last_error=$5,updated_at=now()
      where id=$6`,
-    [status,postId,quality,attempts,error,id]
+    [
+      String(patch.status||"failed"),
+      patch.post_id||null,
+      patch.quality_score??null,
+      Number(patch.attempt_count||0),
+      patch.last_error?String(patch.last_error).slice(0,1800):null,
+      id
+    ]
   );
 }
 
-async function processAccount({sql,origin,account,run,date,slotIndex}){
-  const recent=await sql(
-    `select body from roader_posts
-     where account_id=$1 and status='published'
-     order by published_at desc nulls last,created_at desc
-     limit 24`,
-    [account.id]
-  );
-  const recentTexts=recent.map(r=>String(r.body||""));
+async function generatePassingDraft({origin,account,postType,recentTexts,excludeTopics,threshold}){
+  let lastQuality=null,lastError=null,lastDraft=null;
+  const used=new Set(excludeTopics.map(normalizeTopic));
 
-  const seed=seededPercent(account.id,date,slotIndex);
-  const postType=pickPostType(account.type_mix,seed);
-  const threshold=Number(account.auto_publish_threshold||90);
-
-  let chosen=null;
-  let lastQuality=null;
-  let generateError=null;
-
-  for(let attempt=1;attempt<=2;attempt++){
+  for(let attempt=1;attempt<=6;attempt++){
     try{
       const draft=await callJson(origin+"/api/ai/generate",{
         method:"POST",
         body:JSON.stringify({
           account_id:Number(account.id),
           post_type:postType,
-          topic:""
+          topic:"",
+          exclude_topics:excludeTopics
         })
       });
+      lastDraft=draft;
+      const topic=String(draft.selected_topic||"").trim();
+      const duplicateTopic=topic && used.has(normalizeTopic(topic));
 
       const quality=scorePost({
         text:String(draft.body||""),
@@ -131,79 +121,196 @@ async function processAccount({sql,origin,account,run,date,slotIndex}){
       });
       lastQuality=quality;
 
-      if(quality.status!=="blocked" && quality.score>=threshold){
-        chosen={...draft,quality,attempt};
-        break;
+      if(!duplicateTopic && quality.status!=="blocked" && quality.score>=threshold){
+        return {draft,quality,attempt};
+      }
+
+      if(topic&&!duplicateTopic){
+        excludeTopics.push(topic);
+        used.add(normalizeTopic(topic));
       }
     }catch(e){
-      generateError=e;
+      lastError=e;
     }
   }
 
-  if(!chosen){
-    await finishRun(sql,run.id,{
-      status:"quality_failed",
-      quality_score:lastQuality?.score??null,
-      attempt_count:2,
-      last_error:generateError
-        ? `generation: ${generateError.message}${generateError.details?" · "+generateError.details:""}`
-        : `quality below threshold ${lastQuality?.score??"-"}/${threshold}`
+  return {draft:lastDraft,quality:lastQuality,attempt:6,error:lastError,failed:true};
+}
+
+async function planAccount({sql,origin,account,date}){
+  const slots=slotsForGoal(account.daily_post_goal);
+  const todayRows=await sql(
+    `select p.generated_topic,p.body,p.status,s.id as schedule_id
+     from roader_posts p
+     left join roader_schedules s on s.post_id=p.id
+     where p.account_id=$1
+       and p.created_at >= ($2::date::timestamp at time zone 'Asia/Seoul')
+       and p.created_at < (($2::date + interval '1 day')::timestamp at time zone 'Asia/Seoul')
+       and p.status in ('scheduled','published','publishing')`,
+    [account.id,date]
+  );
+  const excludeTopics=todayRows.map(r=>String(r.generated_topic||"").trim()).filter(Boolean);
+  const recent=await sql(
+    `select body from roader_posts
+     where account_id=$1 and status='published'
+     order by published_at desc nulls last,created_at desc limit 24`,
+    [account.id]
+  );
+  const recentTexts=recent.map(r=>String(r.body||""));
+
+  const existing=await sql(
+    `select r.slot_index,r.status,r.post_id
+     from roader_automation_runs r
+     where r.account_id=$1 and r.run_date=$2::date`,
+    [account.id,date]
+  );
+  const active=new Map(existing.filter(r=>["scheduled","published","publishing"].includes(String(r.status))).map(r=>[Number(r.slot_index),r]));
+
+  const results=[];
+
+  for(let i=0;i<slots.length;i++){
+    if(active.has(i)){ results.push({slot:i,status:"already_planned"}); continue; }
+
+    const run=await claimRun(sql,account.id,date,i,slots[i]);
+    if(!run){ results.push({slot:i,status:"claimed"}); continue; }
+
+    const postType=pickPostType(account.type_mix,seededPercent(account.id,date,i));
+    const threshold=Number(account.auto_publish_threshold||90);
+    const generated=await generatePassingDraft({
+      origin,account,postType,recentTexts,excludeTopics,threshold
     });
-    return {account_id:account.id,status:"quality_failed",score:lastQuality?.score??null};
+
+    if(generated.failed){
+      await finishRun(sql,run.id,{
+        status:"quality_failed",
+        quality_score:generated.quality?.score??null,
+        attempt_count:generated.attempt,
+        last_error:generated.error
+          ? `generation: ${generated.error.message}${generated.error.details?" · "+generated.error.details:""}`
+          : `quality below threshold ${generated.quality?.score??"-"}/${threshold}`
+      });
+      results.push({slot:i,status:"quality_failed",score:generated.quality?.score??null});
+      continue;
+    }
+
+    const d=generated.draft;
+    const q=generated.quality;
+    const postRows=await sql(
+      `insert into roader_posts
+       (account_id,post_type,media_mode,body,reply_text,generated_topic,
+        quality_score,quality_status,quality_details,status,source_code)
+       values ($1,$2,'text',$3,$4,$5,$6,$7,$8::jsonb,'scheduled',$9)
+       returning *`,
+      [
+        account.id,
+        postType,
+        String(d.body||""),
+        String(d.reply||""),
+        String(d.selected_topic||""),
+        q.score,
+        q.status,
+        JSON.stringify(q),
+        String(account.handle||"").replace(/^@/,"")
+      ]
+    );
+    const post=postRows[0];
+
+    const scheduleRows=await sql(
+      `insert into roader_schedules(post_id,scheduled_at,timezone,status)
+       values ($1,$2,'Asia/Seoul','scheduled')
+       on conflict (post_id) do update set scheduled_at=excluded.scheduled_at,status='scheduled',updated_at=now()
+       returning *`,
+      [post.id,slotIso(date,slots[i])]
+    );
+
+    await finishRun(sql,run.id,{
+      status:"scheduled",
+      post_id:post.id,
+      quality_score:q.score,
+      attempt_count:generated.attempt
+    });
+
+    if(d.selected_topic) excludeTopics.push(String(d.selected_topic));
+    recentTexts.unshift(String(d.body||""));
+    results.push({
+      slot:i,status:"scheduled",post_id:post.id,schedule_id:scheduleRows[0]?.id,
+      score:q.score,topic:d.selected_topic
+    });
   }
 
-  try{
-    const published=await callJson(origin+"/api/threads/publish",{
-      method:"POST",
-      body:JSON.stringify({
-        account_id:Number(account.id),
-        post_type:postType,
-        media_mode:"text",
-        body:chosen.body,
-        quality_score:chosen.quality.score,
-        quality_status:chosen.quality.status,
-        quality_details:chosen.quality,
-        reply_text:String(chosen.reply||"").trim()
-      })
-    });
+  return results;
+}
 
-    await finishRun(sql,run.id,{
-      status:"published",
-      post_id:published.post_id||null,
-      quality_score:chosen.quality.score,
-      attempt_count:chosen.attempt,
-      last_error:published.reply_attempted&&!published.reply_ok
-        ? `reply_failed: ${published.reply_details||"unknown"}`
-        : null
-    });
+async function publishDue({sql,origin}){
+  const due=await sql(
+    `select s.id as schedule_id,s.attempt_count,p.id as post_id,p.account_id,p.post_type,
+       p.body,p.reply_text,p.quality_score,p.quality_status,p.quality_details,
+       cp.auto_publish_threshold
+     from roader_schedules s
+     join roader_posts p on p.id=s.post_id
+     left join roader_content_profiles cp on cp.account_id=p.account_id
+     where s.status='scheduled'
+       and p.status='scheduled'
+       and s.scheduled_at<=now()
+     order by s.scheduled_at asc
+     limit 20`
+  );
 
-    return {
-      account_id:account.id,
-      status:"published",
-      post_id:published.post_id||null,
-      threads_post_id:published.threads_post_id||null,
-      score:chosen.quality.score,
-      reply_ok:published.reply_ok
-    };
-  }catch(e){
-    await finishRun(sql,run.id,{
-      status:"publish_failed",
-      quality_score:chosen.quality.score,
-      attempt_count:chosen.attempt,
-      last_error:`${e.message}${e.details?" · "+e.details:""}`
-    });
-    return {account_id:account.id,status:"publish_failed",score:chosen.quality.score,error:e.message};
+  const results=[];
+  for(const row of due){
+    try{
+      const published=await callJson(origin+"/api/threads/publish",{
+        method:"POST",
+        body:JSON.stringify({
+          post_id:Number(row.post_id),
+          account_id:Number(row.account_id),
+          post_type:row.post_type,
+          media_mode:"text",
+          body:row.body,
+          reply_text:row.reply_text||"",
+          quality_score:row.quality_score,
+          quality_status:row.quality_status,
+          quality_details:row.quality_details||{}
+        })
+      });
+
+      await sql(
+        `update roader_schedules
+         set status='published',attempt_count=attempt_count+1,last_error=null,updated_at=now()
+         where id=$1`,
+        [row.schedule_id]
+      );
+      await sql(
+        `update roader_automation_runs set status='published',updated_at=now()
+         where post_id=$1`,
+        [row.post_id]
+      );
+      results.push({post_id:row.post_id,status:"published",threads_post_id:published.threads_post_id});
+    }catch(e){
+      await sql(
+        `update roader_schedules
+         set attempt_count=attempt_count+1,last_error=$1,updated_at=now()
+         where id=$2`,
+        [String(e.details||e.message||"publish_failed").slice(0,1800),row.schedule_id]
+      );
+      await sql(
+        `update roader_automation_runs set status='publish_failed',last_error=$1,updated_at=now()
+         where post_id=$2`,
+        [String(e.details||e.message||"publish_failed").slice(0,1800),row.post_id]
+      );
+      // Leave schedule as scheduled so next cron retries.
+      results.push({post_id:row.post_id,status:"publish_failed",error:e.message});
+    }
   }
+  return results;
 }
 
 export default async function handler(req,res){
   try{
     if(req.method!=="GET"&&req.method!=="POST") return res.status(405).json({ok:false,error:"method_not_allowed"});
-
     const secret=process.env.CRON_SECRET;
     if(!secret) return res.status(503).json({ok:false,error:"cron_secret_not_configured"});
-    const auth=String(req.headers.authorization||"");
-    if(auth!==`Bearer ${secret}`) return res.status(401).json({ok:false,error:"unauthorized"});
+    if(String(req.headers.authorization||"")!==`Bearer ${secret}`) return res.status(401).json({ok:false,error:"unauthorized"});
 
     await ensureSchema();
     const sql=client();
@@ -223,58 +330,20 @@ export default async function handler(req,res){
        order by a.id asc`
     );
 
-    const results=[];
-
+    const planning=[];
     for(const account of accounts){
-      const slots=slotsForGoal(account.daily_post_goal);
-      if(!slots.length) continue;
-
-      const publishedToday=await sql(
-        `select count(*)::int as n from roader_posts
-         where account_id=$1 and status='published'
-           and published_at >= (date_trunc('day',now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')
-           and published_at < ((date_trunc('day',now() at time zone 'Asia/Seoul') + interval '1 day') at time zone 'Asia/Seoul')`,
-        [account.id]
-      );
-      if(Number(publishedToday[0]?.n||0)>=Number(account.daily_post_goal||0)){
-        results.push({account_id:account.id,status:"daily_goal_reached"});
-        continue;
-      }
-
-      const runs=await sql(
-        `select slot_index,status from roader_automation_runs
-         where account_id=$1 and run_date=$2::date`,
-        [account.id,now.date]
-      );
-      const used=new Set(runs.map(r=>Number(r.slot_index)));
-
-      let dueIndex=-1;
-      for(let i=0;i<slots.length;i++){
-        if(slots[i]<=now.hour && !used.has(i)){ dueIndex=i; break; }
-      }
-      if(dueIndex<0){
-        results.push({account_id:account.id,status:"not_due"});
-        continue;
-      }
-
-      const run=await claimRun(sql,account.id,now.date,dueIndex,slots[dueIndex]);
-      if(!run){
-        results.push({account_id:account.id,status:"already_claimed"});
-        continue;
-      }
-
-      const result=await processAccount({
-        sql,origin,account,run,date:now.date,slotIndex:dueIndex
-      });
-      results.push(result);
+      const rows=await planAccount({sql,origin,account,date:now.date});
+      planning.push({account_id:account.id,rows});
     }
+
+    const publishing=await publishDue({sql,origin});
 
     return res.status(200).json({
       ok:true,
       kst_date:now.date,
       kst_hour:now.hour,
-      processed:results.filter(r=>r.status==="published").length,
-      results
+      planning,
+      publishing
     });
   }catch(error){
     console.error("automation-run",error);

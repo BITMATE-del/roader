@@ -273,6 +273,8 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
   const [connecting,setConnecting]=useState(null);
   const [message,setMessage]=useState("");
   const [copied,setCopied]=useState(null);
+  const [editing,setEditing]=useState(null);
+  const [editSaving,setEditSaving]=useState(false);
   const filtered=accounts.filter(a=>[a.name,a.handle,a.sector,a.persona].join(" ").toLowerCase().includes(q.toLowerCase()));
 
   async function copyReferral(account){
@@ -286,6 +288,29 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
     }catch{
       window.prompt("프로필 유입 링크를 복사해주세요.",url);
     }
+  }
+
+  async function saveAccountEdit(){
+    if(!editing?.id) return;
+    setEditSaving(true);setMessage("");
+    try{
+      await api("/api/accounts",{method:"PATCH",body:JSON.stringify({
+        id:editing.id,
+        name:editing.name,
+        sector:editing.sector,
+        target_audience:editing.target_audience,
+        tone:editing.tone,
+        persona:editing.persona,
+        daily_post_goal:Number(editing.daily_post_goal||0),
+        cta_ratio:Number(editing.cta_ratio||0),
+        is_active:editing.is_active
+      })});
+      setEditing(null);
+      setMessage("계정 설정 수정 완료");
+      await onRefresh();
+    }catch(e){
+      setMessage("계정 수정 실패 · "+(e.message||"server_error"));
+    }finally{setEditSaving(false);}
   }
 
   async function connectThreads(accountId){
@@ -346,6 +371,7 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
           <a className="ghost referral-open" href={`/r/${a.telegram_source_code}`} target="_blank" rel="noreferrer"><ExternalLink size={14}/>열기</a>
         </div>}</div>
         <div className="account-actions">
+          <button className="ghost" onClick={()=>setEditing({...a})}><SlidersHorizontal size={15}/> 설정 수정</button>
           <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
             {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
             {a.threads_user_id?"Threads 다시 연결":"새 로그인으로 연결"}
@@ -353,6 +379,26 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
         </div>
       </div>)}</div>}
     </div>
+    {editing&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setEditing(null)}>
+      <div className="modal-card">
+        <div className="modal-heading"><div><h2>계정 설정 수정</h2><p>{editing.handle}</p></div></div>
+        <div className="form-grid">
+          <div><label>계정명</label><input value={editing.name||""} onChange={e=>setEditing(v=>({...v,name:e.target.value}))}/></div>
+          <div><label>섹터</label><input value={editing.sector||""} onChange={e=>setEditing(v=>({...v,sector:e.target.value}))}/></div>
+          <div><label>주요 타깃</label><input value={editing.target_audience||""} onChange={e=>setEditing(v=>({...v,target_audience:e.target.value}))}/></div>
+          <div><label>기본 톤</label><input value={editing.tone||""} onChange={e=>setEditing(v=>({...v,tone:e.target.value}))}/></div>
+          <div><label>하루 게시 목표</label><input type="number" min="0" max="8" value={editing.daily_post_goal??0} onChange={e=>setEditing(v=>({...v,daily_post_goal:e.target.value}))}/></div>
+          <div><label>CTA 비율</label><input type="number" min="0" max="100" value={editing.cta_ratio??0} onChange={e=>setEditing(v=>({...v,cta_ratio:e.target.value}))}/></div>
+        </div>
+        <label>페르소나 / 작성 규칙</label>
+        <textarea rows="7" value={editing.persona||""} onChange={e=>setEditing(v=>({...v,persona:e.target.value}))}/>
+        <label className="check-row"><input type="checkbox" checked={editing.is_active!==false} onChange={e=>setEditing(v=>({...v,is_active:e.target.checked}))}/> 자동 운영 활성화</label>
+        <div className="modal-actions">
+          <button className="ghost" onClick={()=>setEditing(null)}>취소</button>
+          <button className="primary" onClick={saveAccountEdit} disabled={editSaving}>{editSaving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 저장</button>
+        </div>
+      </div>
+    </div>}
   </>;
 }
 
@@ -703,12 +749,76 @@ function Writer({accounts,posts,onSaved}){
   </>;
 }
 
-function Scheduler({schedules}){
+function Scheduler({schedules,onRefresh}){
+  const [editing,setEditing]=useState(null);
+  const [editText,setEditText]=useState("");
+  const [editReply,setEditReply]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
+
+  const editQuality=useMemo(()=>scorePost({
+    text:editText,
+    mediaMode:"text",
+    hasImage:false,
+    recentTexts:[]
+  }),[editText]);
+
+  function openEdit(row){
+    setEditing(row);
+    setEditText(row.body||"");
+    setEditReply(row.reply_text||"");
+    setMessage("");
+  }
+
+  async function saveEdit(){
+    if(!editing?.post_id||!editText.trim()) return;
+    const threshold=Number(editing.auto_publish_threshold||90);
+    if(editQuality.status==="blocked"||editQuality.score<threshold){
+      setMessage(`품질 ${editQuality.score}점 · 자동게시 기준 ${threshold}점 이상으로 수정해주세요.`);
+      return;
+    }
+    setSaving(true);setMessage("");
+    try{
+      await api("/api/posts",{method:"PATCH",body:JSON.stringify({
+        id:editing.post_id,
+        body:editText,
+        reply_text:editReply,
+        quality_score:editQuality.score,
+        quality_status:editQuality.status,
+        quality_details:editQuality
+      })});
+      setMessage("예약 게시물 수정 완료");
+      setEditing(null);
+      await onRefresh();
+    }catch(e){
+      setMessage("예약글 수정 실패 · "+(e.message||"server_error"));
+    }finally{setSaving(false);}
+  }
+
   return <>
-    <div className="hero-row"><div><h1>게시 스케줄러</h1><p>실제 DB에 저장된 예약 일정만 표시됩니다.</p></div></div>
-    <div className="panel">{schedules.length===0?<EmptyState title="예약된 게시물이 없습니다." desc="게시물 초안의 예약 기능을 연결하면 여기에 일정이 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>게시물</th><th>유형</th><th>상태</th><th>품질</th></tr></thead><tbody>
-      {schedules.map(s=><tr key={s.id}><td>{fmtDate(s.scheduled_at)}</td><td>{s.account_name}</td><td className="text-cell">{s.body}</td><td><span className="tag">{s.post_type}</span></td><td><StatusBadge>{s.status}</StatusBadge></td><td>{s.quality_score??"-"}</td></tr>)}
+    <div className="hero-row"><div><h1>게시 스케줄러</h1><p>자동화가 오늘 게시할 글을 미리 생성합니다. 게시 전 본문과 첫 댓글을 수정할 수 있습니다.</p></div></div>
+    {message&&<div className="save-message">{message}</div>}
+    <div className="panel">{schedules.length===0?<EmptyState title="예약된 게시물이 없습니다." desc="자동화가 다음 게시 슬롯을 생성하면 여기에 예정 글이 표시됩니다."/>:<div className="table-wrap"><table><thead><tr><th>예약시간</th><th>계정</th><th>주제</th><th>게시물</th><th>상태</th><th>품질</th><th>수정</th></tr></thead><tbody>
+      {schedules.map(s=><tr key={s.id}><td>{fmtDate(s.scheduled_at)}</td><td>{s.account_name}</td><td>{s.generated_topic||"-"}</td><td className="text-cell">{s.body}</td><td><StatusBadge>{s.status==="scheduled"?"게시 예정":s.status}</StatusBadge></td><td>{s.quality_score??"-"}</td><td>{s.status==="scheduled"?<button className="ghost" onClick={()=>openEdit(s)}>수정</button>:"-"}</td></tr>)}
     </tbody></table></div>}</div>
+
+    {editing&&<div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&setEditing(null)}>
+      <div className="modal-card schedule-edit-modal">
+        <div className="modal-heading"><div><h2>예약 게시물 수정</h2><p>{editing.account_name} · {fmtDate(editing.scheduled_at)}</p></div></div>
+        <label>본문</label>
+        <textarea rows="14" value={editText} onChange={e=>setEditText(e.target.value)}/>
+        <label>1차 댓글</label>
+        <textarea rows="6" value={editReply} onChange={e=>setEditReply(e.target.value)}/>
+        <div className={editQuality.score>=Number(editing.auto_publish_threshold||90)&&editQuality.status!=="blocked"?"save-message":"form-error"}>
+          품질 {editQuality.score}점 / 자동게시 기준 {editing.auto_publish_threshold||90}점
+          {editQuality.blockers?.length? " · "+editQuality.blockers.join(" · "):""}
+        </div>
+        <div className="modal-actions">
+          <button className="ghost" onClick={()=>setEditing(null)}>취소</button>
+          <button className="primary" onClick={saveEdit} disabled={saving||editQuality.status==="blocked"||editQuality.score<Number(editing.auto_publish_threshold||90)}>{saving?<Loader2 className="spin" size={16}/>:<Save size={16}/>} 수정 저장</button>
+        </div>
+      </div>
+    </div>}
   </>;
 }
 
@@ -857,7 +967,7 @@ export default function App(){
     content:<ContentSettings accounts={accounts}/>,
     learning:<StyleLearning accounts={accounts} onRefresh={loadAll}/>,
     writer:<Writer accounts={accounts} posts={posts} onSaved={loadAll}/>,
-    scheduler:<Scheduler schedules={schedules}/>,
+    scheduler:<Scheduler schedules={schedules} onRefresh={loadAll}/>,
     history:<HistoryPage posts={posts}/>,
     analytics:<Analytics data={dashboard} onRefresh={loadAll}/>,
     leads:<Leads leads={leads} onRefresh={loadAll}/>,

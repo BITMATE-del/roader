@@ -480,6 +480,7 @@ export default async function handler(req,res){
       "광고처럼 과장하지 말고 정보 계정의 자연스러운 추가 안내처럼 작성한다.",
       "마크다운 굵게(**), 제목 기호(#), 과도한 이모지와 불릿은 사용하지 않는다.",
       "Threads 본문은 반드시 470자 이하로 작성한다. 첫 댓글은 반드시 300자 이하로 작성한다. 제한을 넘길 것 같으면 반복 설명과 군더더기를 줄이고 핵심만 남긴다.",
+      "exclude_topics에 있는 오늘의 주제와 겹치는 소재는 선택하지 않는다.",
       "최종 출력은 지정된 JSON 스키마만 반환한다.",
       "코인 소재라면 symbol 필드에는 거래소에서 사용하는 영문 티커만 넣는다. 예: ORCA, ADA, SOL. 코인 소재가 아니면 빈 문자열로 둔다.",
       "코인 소재라면 coin_name 필드에는 한국에서 통용되는 코인명을 넣는다. 예: 솔라나, 이더리움, 오르카. 코인 소재가 아니면 빈 문자열로 둔다.",
@@ -530,6 +531,7 @@ export default async function handler(req,res){
         persona:account.persona
       },
       automation_mode:topicOverride ? "user_override" : "auto_discovery",
+      exclude_topics:excludeTopics,
       content_strategy:isCrypto ? "crypto_outlook_analysis" : "general_market_discovery",
       crypto_mode:isCrypto,
       topic_override:topicOverride||null,

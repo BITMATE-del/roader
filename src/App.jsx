@@ -4,7 +4,7 @@ import {
   BarChart3, Send, Settings, Plus, Eye, UserRound, MousePointerClick, ClipboardCheck,
   MoreHorizontal, CheckCircle2, AlertTriangle, Image as ImageIcon, FileText,
   MessageCircle, Newspaper, Heart, UploadCloud, WandSparkles, ShieldCheck, XCircle,
-  Search, ChevronDown, Save, RefreshCw, Database, Loader2, BrainCircuit, Copy, ExternalLink
+  Search, ChevronDown, Save, RefreshCw, Database, Loader2, BrainCircuit, Copy, ExternalLink, Trash2
 } from "lucide-react";
 import { scorePost, qualityLabel } from "./lib/quality";
 
@@ -275,6 +275,7 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
   const [copied,setCopied]=useState(null);
   const [editing,setEditing]=useState(null);
   const [editSaving,setEditSaving]=useState(false);
+  const [deleting,setDeleting]=useState(null);
   const filtered=accounts.filter(a=>[a.name,a.handle,a.sector,a.persona].join(" ").toLowerCase().includes(q.toLowerCase()));
 
   async function copyReferral(account){
@@ -311,6 +312,27 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
     }catch(e){
       setMessage("계정 수정 실패 · "+(e.message||"server_error"));
     }finally{setEditSaving(false);}
+  }
+
+  async function deleteAccount(account){
+    if(!account?.id) return;
+    const confirmed=window.confirm(
+      `${account.name} (${account.handle}) 계정을 ROADER에서 삭제할까요?\n\n이 계정의 예약글, 게시물, 학습 데이터도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`
+    );
+    if(!confirmed) return;
+
+    setDeleting(account.id);
+    setMessage("");
+    try{
+      await api("/api/accounts",{method:"DELETE",body:JSON.stringify({id:account.id})});
+      if(editing?.id===account.id) setEditing(null);
+      setMessage(`계정 삭제 완료 · ${account.handle}`);
+      await onRefresh();
+    }catch(e){
+      setMessage("계정 삭제 실패 · "+(e.message||"server_error"));
+    }finally{
+      setDeleting(null);
+    }
   }
 
   async function connectThreads(accountId){
@@ -372,6 +394,10 @@ function Accounts({accounts,loading,onAdd,onRefresh}){
         </div>}</div>
         <div className="account-actions">
           <button className="ghost" onClick={()=>setEditing({...a})}><SlidersHorizontal size={15}/> 설정 수정</button>
+          <button className="ghost danger-action" onClick={()=>deleteAccount(a)} disabled={deleting===a.id}>
+            {deleting===a.id?<Loader2 className="spin" size={15}/>:<Trash2 size={15}/>}
+            {deleting===a.id?"삭제 중":"삭제"}
+          </button>
           <button className={a.threads_user_id?"ghost":"primary"} onClick={()=>connectThreads(a.id)} disabled={connecting===a.id}>
             {connecting===a.id?<Loader2 className="spin" size={15}/>:<Send size={15}/>}
             {a.threads_user_id?"Threads 다시 연결":"새 로그인으로 연결"}

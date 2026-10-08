@@ -34,7 +34,8 @@ const initialAccountForm = {
 };
 
 function fmt(n){
-  return Number(n || 0).toLocaleString("ko-KR");
+  const num=Number(String(n??0).replaceAll(",",""));
+  return (Number.isFinite(num)?num:0).toLocaleString("ko-KR");
 }
 
 function fmtDate(v){
@@ -1120,6 +1121,21 @@ function Analytics({data,onRefresh}){
   const rows=(data?.posts||[]).filter(p=>p.status==="published");
   const [syncing,setSyncing]=useState(false);
   const [syncMessage,setSyncMessage]=useState("");
+  const [accountRows,setAccountRows]=useState([]);
+  const [accountLoading,setAccountLoading]=useState(true);
+  const [accountError,setAccountError]=useState("");
+  const [selected,setSelected]=useState("all");
+  const number=v=>{const n=Number(String(v??0).replaceAll(",",""));return Number.isFinite(n)?n:0;};
+
+  async function loadAccounts(){
+    setAccountLoading(true);setAccountError("");
+    try{
+      const r=await api("/api/analytics/accounts");
+      setAccountRows(r.accounts||[]);
+    }catch(e){setAccountError("계정별 성과 조회 실패 · "+(e.details||e.message));}
+    finally{setAccountLoading(false);}
+  }
+  useEffect(()=>{loadAccounts();},[]);
 
   async function syncInsights(){
     setSyncing(true);setSyncMessage("");
@@ -1127,33 +1143,66 @@ function Analytics({data,onRefresh}){
       const r=await api("/api/metrics/sync",{method:"POST",body:JSON.stringify({})});
       setSyncMessage("성과 갱신 완료 · 성공 "+(r.synced||0)+"개"+(r.failed?" · 실패 "+r.failed+"개":""));
       await onRefresh();
-    }catch(e){
-      setSyncMessage("성과 갱신 실패 · "+(e.details||e.message||"server_error"));
-    }finally{setSyncing(false);}
+      await loadAccounts();
+    }catch(e){setSyncMessage("성과 갱신 실패 · "+(e.details||e.message||"server_error"));}
+    finally{setSyncing(false);}
   }
 
-  return <><div className="hero-row"><div><h1>성과 분석</h1><p>실제 Threads 게시물 인사이트를 기준으로 집계합니다.</p></div><button className="primary" onClick={syncInsights} disabled={syncing}>{syncing?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>} {syncing?"Threads 인사이트 수집 중":"성과 지금 갱신"}</button></div>
+  const scored=accountRows.map(a=>{
+    const views=number(a.views),posts=number(a.published_count),measured=number(a.measured_count);
+    const reactions=number(a.likes)+number(a.replies)+number(a.reposts)+number(a.quotes)+number(a.shares);
+    const engagement=views>0?reactions/views*100:null;
+    const avgViews=measured>0?views/measured:0;
+    const engagementScore=engagement===null?0:Math.min(100,engagement*10);
+    const reachScore=measured?Math.min(100,Math.log10(avgViews+1)*30):0;
+    const consistency=number(a.daily_post_goal)>0?Math.min(100,number(a.posted_7d)/(number(a.daily_post_goal)*7)*100):0;
+    const quality=Math.max(0,Math.min(100,number(a.avg_quality)));
+    const learning=Math.max(0,Math.min(100,number(a.learning_confidence)));
+    const score=measured>=3?Math.round(reachScore*.3+engagementScore*.3+consistency*.15+quality*.15+learning*.1):null;
+    return {...a,views,posts,measured,engagement,avgViews,score,quality,consistency,learning};
+  });
+  const displayed=selected==="all"?scored:scored.filter(a=>String(a.account_id)===selected);
+
+  return <>
+    <div className="hero-row"><div><h1>성과 분석</h1><p>Threads 실제 인사이트와 계정별 운영 성과를 확인합니다.</p></div><button className="primary" onClick={syncInsights} disabled={syncing}>{syncing?<Loader2 className="spin" size={16}/>:<RefreshCw size={16}/>} {syncing?"Threads 인사이트 수집 중":"성과 지금 갱신"}</button></div>
     {syncMessage&&<div className="analytics-sync-message">{syncMessage}</div>}
     <div className="stats analytics-stats">
-      <Stat icon={Eye} label="전체 조회수" value={fmt(t.views)}/>
-      <Stat icon={Heart} label="좋아요" value={fmt(t.likes)}/>
-      <Stat icon={MessageCircle} label="답글" value={fmt(t.replies)}/>
-      <Stat icon={RefreshCw} label="리포스트" value={fmt(t.reposts)}/>
+      <Stat icon={Eye} label="전체 조회수" value={t.views}/>
+      <Stat icon={Heart} label="좋아요" value={t.likes}/>
+      <Stat icon={MessageCircle} label="답글" value={t.replies}/>
+      <Stat icon={RefreshCw} label="리포스트" value={t.reposts}/>
     </div>
     <div className="stats analytics-stats secondary">
-      <Stat icon={Newspaper} label="인용" value={fmt(t.quotes)}/>
-      <Stat icon={Send} label="공유" value={fmt(t.shares)}/>
-      <Stat icon={MousePointerClick} label="봇 진입" value={fmt(t.bot_entries)}/>
-      <Stat icon={ClipboardCheck} label="신청 완료" value={fmt(t.applications)}/>
+      <Stat icon={Newspaper} label="인용" value={t.quotes}/>
+      <Stat icon={Send} label="공유" value={t.shares}/>
+      <Stat icon={MousePointerClick} label="봇 진입" value={t.bot_entries}/>
+      <Stat icon={ClipboardCheck} label="신청 완료" value={t.applications}/>
+    </div>
+    <div className="panel">
+      <div className="analytics-section-head"><div><h2>계정별 성과 및 현재점수</h2><p>점수는 ROADER 운영 지표이며 Threads 공식 계정 점수는 아닙니다.</p></div><select value={selected} onChange={e=>setSelected(e.target.value)}><option value="all">전체 계정</option>{accountRows.map(a=><option value={String(a.account_id)} key={a.account_id}>{a.account_name}</option>)}</select></div>
+      {accountError&&<div className="form-error">{accountError}</div>}
+      {accountLoading?<div className="loading-line"><Loader2 className="spin"/> 계정별 성과 집계 중</div>:
+      <div className="account-performance-grid">{displayed.map(a=><div className="account-performance-card" key={a.account_id}>
+        <div className="account-performance-head"><div><b>{a.account_name}</b><span>{a.handle} · 게시 {fmt(a.posts)}건 · 측정 {fmt(a.measured)}건</span></div><div className="account-performance-score"><strong>{a.score===null?"평가 대기":a.score+"점"}</strong><small>{a.score===null?"최소 3개 게시물의 성과 측정 필요":"ROADER 현재점수"}</small></div></div>
+        <div className="account-performance-metrics">
+          <div><span>조회수</span><b>{fmt(a.views)}</b></div>
+          <div><span>좋아요</span><b>{fmt(a.likes)}</b></div>
+          <div><span>답글</span><b>{fmt(a.replies)}</b></div>
+          <div><span>참여율</span><b>{a.engagement===null?"자료 없음":a.engagement.toFixed(2)+"%"}</b></div>
+          <div><span>리포스트·인용·공유</span><b>{fmt(number(a.reposts)+number(a.quotes)+number(a.shares))}</b></div>
+          <div><span>평균 조회수</span><b>{a.measured?fmt(Math.round(a.avgViews)):"자료 없음"}</b></div>
+        </div>
+        <div className="account-performance-breakdown">운영 일관성 {Math.round(a.consistency)} · 콘텐츠 품질 {Math.round(a.quality)} · 학습 신뢰도 {Math.round(a.learning)} <span>최근 측정 {fmtDate(a.last_measured_at)}</span></div>
+      </div>)}</div>}
     </div>
     <div className="panel">
       <SectionTitle title="최근 게시물 성과" action={<span className="tag">실제 게시 완료 기준</span>}/>
-      {rows.length===0?<EmptyState title="게시 완료 데이터가 없습니다." desc="Threads에 실제 게시된 글이 생기면 여기에서 조회수와 반응을 비교할 수 있습니다."/>:
+      {rows.length===0?<EmptyState title="게시 완료 데이터가 없습니다." desc="Threads에 실제 게시된 글이 생기면 반응을 확인할 수 있습니다."/>:
       <div className="table-wrap"><table><thead><tr><th>계정</th><th>게시물</th><th>조회</th><th>좋아요</th><th>답글</th><th>리포스트</th><th>인용</th><th>공유</th></tr></thead><tbody>
         {rows.map(p=><tr key={p.id}><td>{p.account_name}</td><td className="analytics-post-body">{String(p.body||"").slice(0,68)}{String(p.body||"").length>68?"…":""}</td><td>{fmt(p.views)}</td><td>{fmt(p.likes)}</td><td>{fmt(p.replies)}</td><td>{fmt(p.reposts)}</td><td>{fmt(p.quotes)}</td><td>{fmt(p.shares)}</td></tr>)}
       </tbody></table></div>}
     </div>
-    <div className="analytics-note">프로필 방문은 현재 Threads 게시물 인사이트의 공통 제공 지표가 아니어서 임의 추정하지 않습니다. 봇 진입·신청 전환은 ROADER 자체 유입 추적 데이터로 집계합니다.</div>
+    <div className="analytics-note">현재점수 = 평균조회수 30% + 참여율 30% + 최근 7일 게시 일관성 15% + 콘텐츠 품질 15% + 학습 신뢰도 10%. 데이터가 부족하면 점수를 확정하지 않습니다. 프로필 방문은 추정하지 않습니다.</div>
   </>;
 }
 
